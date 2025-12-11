@@ -1,0 +1,19 @@
+# Build directory
+build/
+
+# IDE settings
+.vscode/
+
+# Cache
+.cache/
+
+# ESP-IDF configuration files
+sdkconfig.old
+sdkconfig
+
+# Dependencies lock file
+dependencies.lock
+
+# Managed components
+managed_components/
+
