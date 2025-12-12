@@ -1,0 +1,52 @@
+{
+  "package": {
+    "name": "EmotiPet_v1.1.0",
+    "version": "1.1.0",
+    "created": "2025-12-12 14:09:18",
+    "target": "ESP32-S3",
+    "description": "EmotiPet 固件发布包"
+  },
+  "files": [
+    {
+      "name": "bootloader.bin",
+      "path": "bootloader\\bootloader.bin",
+      "size": 16464,
+      "md5": "7304584d00e834ce9069163b0c8209bd",
+      "modified": "2025-12-11 18:17:50",
+      "type": "bootloader",
+      "offset": "0x0"
+    },
+    {
+      "name": "EmotiPet.bin",
+      "path": "EmotiPet.bin",
+      "size": 211232,
+      "md5": "3cb1f75058501afb310d04af978cd95b",
+      "modified": "2025-12-12 14:08:47",
+      "type": "app",
+      "offset": "0x20000"
+    },
+    {
+      "name": "partition-table.bin",
+      "path": "partition_table\\partition-table.bin",
+      "size": 3072,
+      "md5": "afe549bac5e55ac6de6bd0c047004a44",
+      "modified": "2025-12-11 18:17:33",
+      "type": "partition-table",
+      "offset": "0x8000"
+    },
+    {
+      "name": "ota_data_initial.bin",
+      "path": "ota_data_initial.bin",
+      "size": 8192,
+      "md5": "84d04c9d6cc8ef35bf825d51a5277699",
+      "modified": "2025-12-11 18:17:33",
+      "type": "otadata",
+      "offset": "0xd000"
+    }
+  ],
+  "flash_info": {
+    "flash_mode": "dio",
+    "flash_size": "16MB",
+    "flash_freq": "80m"
+  }
+}
