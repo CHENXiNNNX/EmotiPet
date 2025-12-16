@@ -25,7 +25,7 @@ namespace app
                 gpio_num_t dout;
                 gpio_num_t din;
                 gpio_num_t pa_pin;
-                uint8_t    es8311_addr;
+                uint8_t    es8389_addr;
                 uint8_t    es7210_addr;
                 bool       input_reference;
 
@@ -33,7 +33,7 @@ namespace app
                     : i2c_master_handle(nullptr), input_sample_rate(24000),
                       output_sample_rate(24000), mclk(GPIO_NUM_16), bclk(GPIO_NUM_9),
                       ws(GPIO_NUM_45), dout(GPIO_NUM_8), din(GPIO_NUM_10), pa_pin(GPIO_NUM_48),
-                      es8311_addr(ES8311_CODEC_DEFAULT_ADDR),
+                      es8389_addr(ES8389_CODEC_DEFAULT_ADDR),
                       es7210_addr(ES7210_CODEC_DEFAULT_ADDR), input_reference(false)
                 {
                 }
