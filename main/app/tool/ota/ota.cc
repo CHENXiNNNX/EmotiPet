@@ -364,20 +364,30 @@ namespace app
                     return false;
                 }
 
-                cJSON* error_item = cJSON_GetObjectItem(root, "error");
-                if (!error_item || !cJSON_IsObject(error_item))
+                // 检查是否是错误响应类型
+                cJSON* type_item = cJSON_GetObjectItem(root, "type");
+                if (!type_item || !cJSON_IsString(type_item) ||
+                    strcmp(type_item->valuestring, "error") != 0)
                 {
                     cJSON_Delete(root);
                     return false;
                 }
 
-                cJSON* code_item = cJSON_GetObjectItem(error_item, "code");
+                // 解析 data 字段
+                cJSON* data_item = cJSON_GetObjectItem(root, "data");
+                if (!data_item || !cJSON_IsObject(data_item))
+                {
+                    cJSON_Delete(root);
+                    return false;
+                }
+
+                cJSON* code_item = cJSON_GetObjectItem(data_item, "code");
                 if (cJSON_IsNumber(code_item))
                 {
                     code = code_item->valueint;
                 }
 
-                cJSON* message_item = cJSON_GetObjectItem(error_item, "message");
+                cJSON* message_item = cJSON_GetObjectItem(data_item, "message");
                 if (cJSON_IsString(message_item))
                 {
                     message = message_item->valuestring;

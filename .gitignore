@@ -17,3 +17,5 @@ dependencies.lock
 # Managed components
 managed_components/
 
+# others
+others/

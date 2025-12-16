@@ -2,9 +2,10 @@ dependencies:
   idf:
     version: '>=5.3.0'
 
-  espressif/libwebsockets: ^4.3.3~1   # websockets library
-  # espp/wifi: ^1.0.32                # wifi library
-  espressif/esp-idf-cxx: ^1.0.2-beta  # c++ library
-  # espressif/network_provisioning: ^1.2.0
+  espressif/esp_websocket_client: ^1.6.0  # websockets library
+  espressif/esp-idf-cxx: ^1.0.2-beta      # c++ library
   espressif/cjson: ^1.7.19
-  h2zero/esp-nimble-cpp: ^2.3.3
+  h2zero/esp-nimble-cpp: ^2.3.3           # nimble library for bluetooth
+  espressif/esp-sr: ^2.2.2
+  espressif/esp_codec_dev: ^1.5.4
+  espressif/esp_audio_codec: ^2.4.0

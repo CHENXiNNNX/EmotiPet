@@ -49,7 +49,6 @@
     "status": 1,
     "progress": 45,
     "current_version": "1.0.0",
-    "target_version": "1.1.0"
   }
 }
 说明：
@@ -101,7 +100,7 @@
   "from": "ota_server",   
   "to": "device_01",
   "timestamp": "2025-03-12T19:00:00Z",
-  "error": {
+  "data": {
     "code": 1001,
     "message": "文件不存在"
   }

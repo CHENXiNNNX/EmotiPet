@@ -316,7 +316,7 @@ def ota_check_update():
                 'from': 'ota_server',
                 'to': 'unknown',
                 'timestamp': get_timestamp(),
-                'error': {
+                'data': {
                     'code': 1000,
                     'message': '无效的请求格式'
                 }
@@ -386,7 +386,7 @@ def ota_check_update():
             'from': 'ota_server',
             'to': request.json.get('from', 'unknown') if request.json else 'unknown',
             'timestamp': get_timestamp(),
-            'error': {
+            'data': {
                 'code': 1000,
                 'message': str(e)
             }
@@ -408,7 +408,7 @@ def ota_get_firmware_info():
                 'from': 'ota_server',
                 'to': 'unknown',
                 'timestamp': get_timestamp(),
-                'error': {
+                'data': {
                     'code': 1000,
                     'message': '无效的请求格式'
                 }
@@ -424,7 +424,7 @@ def ota_get_firmware_info():
                 'from': 'ota_server',
                 'to': device_id,
                 'timestamp': get_timestamp(),
-                'error': {
+                'data': {
                     'code': 1001,
                     'message': '文件不存在'
                 }
@@ -457,7 +457,7 @@ def ota_get_firmware_info():
             'from': 'ota_server',
             'to': request.json.get('from', 'unknown') if request.json else 'unknown',
             'timestamp': get_timestamp(),
-            'error': {
+            'data': {
                 'code': 1000,
                 'message': str(e)
             }
@@ -479,7 +479,7 @@ def ota_request_firmware():
                 'from': 'ota_server',
                 'to': 'unknown',
                 'timestamp': get_timestamp(),
-                'error': {
+                'data': {
                     'code': 1000,
                     'message': '无效的请求格式'
                 }
@@ -497,7 +497,7 @@ def ota_request_firmware():
                 'from': 'ota_server',
                 'to': device_id,
                 'timestamp': get_timestamp(),
-                'error': {
+                'data': {
                     'code': 1001,
                     'message': '文件名不能为空'
                 }
@@ -514,7 +514,7 @@ def ota_request_firmware():
                 'from': 'ota_server',
                 'to': device_id,
                 'timestamp': get_timestamp(),
-                'error': {
+                'data': {
                     'code': 1001,
                     'message': '文件不存在'
                 }
@@ -542,7 +542,7 @@ def ota_request_firmware():
             'from': 'ota_server',
             'to': request.json.get('from', 'unknown') if request.json else 'unknown',
             'timestamp': get_timestamp(),
-            'error': {
+            'data': {
                 'code': 1000,
                 'message': str(e)
             }
@@ -564,7 +564,7 @@ def ota_report_status():
                 'from': 'ota_server',
                 'to': 'unknown',
                 'timestamp': get_timestamp(),
-                'error': {
+                'data': {
                     'code': 1000,
                     'message': '无效的请求格式'
                 }
@@ -607,7 +607,7 @@ def ota_report_status():
             'from': 'ota_server',
             'to': request.json.get('from', 'unknown') if request.json else 'unknown',
             'timestamp': get_timestamp(),
-            'error': {
+            'data': {
                 'code': 1000,
                 'message': str(e)
             }
