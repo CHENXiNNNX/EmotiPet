@@ -9,3 +9,4 @@ dependencies:
   espressif/esp-sr: ^2.2.2
   espressif/esp_codec_dev: ^1.5.4
   espressif/esp_audio_codec: ^2.4.0
+  waveshare/qmi8658: ^1.0.1

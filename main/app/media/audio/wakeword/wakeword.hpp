@@ -8,6 +8,8 @@
 
 #include <model_path.h>
 
+#include "system/event/event.hpp"
+
 namespace app
 {
     namespace media
@@ -16,6 +18,24 @@ namespace app
         {
             namespace wakeword
             {
+                // 事件定义
+                extern const char* WAKEWORD_EVENT_BASE;
+
+                enum WakeWordEventId : int32_t
+                {
+                    WAKEWORD_EVENT_DETECTED = 0,
+                    WAKEWORD_EVENT_STARTED,
+                    WAKEWORD_EVENT_STOPPED,
+                };
+
+                struct WakeWordEventData
+                {
+                    char  text[64];
+                    char  command[64];
+                    char  action[32];
+                    float probability;
+                };
+
                 /**
                  * @brief 唤醒词检测抽象接口
                  */
@@ -42,20 +62,32 @@ namespace app
                      * @return true 成功, false 失败
                      */
                     virtual bool addCommand(const std::string& command, const std::string& text,
-                                           const std::string& action = "wake") = 0;
+                                            const std::string& action = "wake") = 0;
+
+                    /**
+                     * @brief 删除命令词
+                     * @param text 显示文本（如 "你好小智"）
+                     * @return true 成功, false 未找到
+                     */
+                    virtual bool removeCommand(const std::string& text) = 0;
+
+                    /**
+                     * @brief 清除当前语言的所有命令词
+                     */
+                    virtual void clearCommands() = 0;
+
+                    /**
+                     * @brief 切换语言模型
+                     * @param language 语言代码（"cn" 或 "en"）
+                     * @return true 成功, false 失败
+                     */
+                    virtual bool switchModel(const std::string& language) = 0;
 
                     /**
                      * @brief 喂入音频数据进行检测
                      * @param data PCM 音频数据（int16_t）
                      */
                     virtual void feed(const std::vector<int16_t>& data) = 0;
-
-                    /**
-                     * @brief 设置唤醒词检测回调
-                     * @param callback 检测到唤醒词时的回调函数，参数为唤醒词文本
-                     */
-                    virtual void setWakeWordDetected(
-                        std::function<void(const std::string& wake_word)> callback) = 0;
 
                     /**
                      * @brief 启动唤醒词检测
@@ -89,4 +121,3 @@ namespace app
         }     // namespace audio
     }         // namespace media
 } // namespace app
-

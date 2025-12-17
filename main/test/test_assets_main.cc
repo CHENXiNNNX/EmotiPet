@@ -66,7 +66,7 @@ extern "C" void app_main(void)
     if (assets.getAssetData("index.json", json_ptr, json_size))
     {
         ESP_LOGI(TAG, "读取成功，大小: %u 字节", json_size);
-        
+
         // 打印 JSON 内容（前 200 字节）
         if (json_size > 0)
         {
@@ -91,8 +91,7 @@ extern "C" void app_main(void)
     size_t model_size = 0;
     if (assets.getAssetData("srmodels.bin", model_ptr, model_size))
     {
-        ESP_LOGI(TAG, "读取成功，大小: %u 字节 (%.2f KB)", 
-                 model_size, model_size / 1024.0f);
+        ESP_LOGI(TAG, "读取成功，大小: %u 字节 (%.2f KB)", model_size, model_size / 1024.0f);
     }
     else
     {

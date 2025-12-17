@@ -59,7 +59,7 @@ namespace app
             checksum_valid_  = false;
             assets_.clear();
 
-            partition_ = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 
+            partition_ = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
                                                   ESP_PARTITION_SUBTYPE_ANY, "assets");
             if (partition_ == nullptr)
             {
@@ -76,9 +76,11 @@ namespace app
                 return false;
             }
 
-            esp_err_t err = esp_partition_mmap(partition_, 0, partition_->size,
-                                               ESP_PARTITION_MMAP_DATA,
-                                               (const void**)&mmap_root_, &mmap_handle_);
+            const void* mmap_ptr = nullptr;
+            esp_err_t   err      = esp_partition_mmap(partition_, 0, partition_->size,
+                                                     ESP_PARTITION_MMAP_DATA, &mmap_ptr,
+                                                     &mmap_handle_);
+            mmap_root_ = static_cast<const char*>(mmap_ptr);
             if (err != ESP_OK)
             {
                 ESP_LOGE(TAG, "内存映射失败: %s", esp_err_to_name(err));
@@ -119,8 +121,8 @@ namespace app
                 assets_[item->asset_name] = asset;
             }
 
-            ESP_LOGI(TAG, "Assets 初始化成功 (文件: %lu, 大小: %lu KB)", 
-                     stored_files, partition_->size / 1024);
+            ESP_LOGI(TAG, "Assets 初始化成功 (文件: %lu, 大小: %lu KB)", stored_files,
+                     partition_->size / 1024);
             return true;
         }
 
@@ -204,14 +206,13 @@ namespace app
 
             const char* data = mmap_root_ + asset->second.offset;
 
-            if (static_cast<uint8_t>(data[0]) != 0x5A ||
-                static_cast<uint8_t>(data[1]) != 0x5A)
+            if (static_cast<uint8_t>(data[0]) != 0x5A || static_cast<uint8_t>(data[1]) != 0x5A)
             {
                 ESP_LOGE(TAG, "资源魔数无效: %s", name.c_str());
                 return false;
             }
 
-            ptr  = const_cast<void*>(static_cast<const void*>(data + 2));
+            ptr  = reinterpret_cast<void*>(const_cast<char*>(data + 2));
             size = asset->second.size;
 
             return true;
@@ -228,4 +229,3 @@ namespace app
 
     } // namespace assets
 } // namespace app
-

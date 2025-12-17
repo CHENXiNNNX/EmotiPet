@@ -2,6 +2,7 @@
 set(SOURCES "app/assets/assets.cc"
             "app/battery/battery.cc"
             "app/common/i2c/i2c.cc"
+            "app/common/i2c/qmi8658a/qmi8658a.cc"
             "app/device/button/button.cc"
             "app/device/led/led.cc"
             "app/device/touch/touch.cc"
@@ -33,6 +34,7 @@ set(INCLUDE_DIRS "app"
                  "app/assets"
                  "app/battery"
                  "app/common/i2c"
+                 "app/common/i2c/qmi8658a"
                  "app/device/button" 
                  "app/device/led"
                  "app/device/touch"
@@ -87,30 +89,37 @@ else()
     set(ESP_SR_MODEL_PATH "")
 endif()
 
-# 配置自定义唤醒词模型（可通过 CMake 变量覆盖，例如：-DMULTINET_MODELS="mn6_cn;mn6_en"）
-if(NOT DEFINED MULTINET_MODELS)
-    # 默认使用中文和英文模型
-    set(MULTINET_MODELS "mn6_cn" "mn6_en")
-endif()
-
-# 唤醒词配置（可选，如果不设置则不在 index.json 中包含唤醒词配置）
-# 用户可以在运行时动态添加唤醒词
-if(NOT DEFINED CN_WAKE_WORD)
-    set(CN_WAKE_WORD "")  # 空字符串表示不配置
-endif()
-
-if(NOT DEFINED EN_WAKE_WORD)
-    set(EN_WAKE_WORD "")  # 空字符串表示不配置
-endif()
-
-if(NOT DEFINED WAKE_WORD_THRESHOLD)
+# 从 Kconfig 读取配置
+if(CONFIG_ENABLE_ASSETS_BUILD)
+    # 解析 Multinet 模型列表（空格分隔的字符串转换为列表）
+    string(REPLACE " " ";" MULTINET_MODELS "${CONFIG_ASSETS_MULTINET_MODELS}")
+    
+    # 唤醒词配置
+    set(CN_WAKE_WORD "${CONFIG_ASSETS_CN_WAKE_WORD}")
+    set(EN_WAKE_WORD "${CONFIG_ASSETS_EN_WAKE_WORD}")
+    set(WAKE_WORD_THRESHOLD "${CONFIG_ASSETS_WAKE_WORD_THRESHOLD}")
+else()
+    # Assets 构建已禁用
+    set(MULTINET_MODELS "")
+    set(CN_WAKE_WORD "")
+    set(EN_WAKE_WORD "")
     set(WAKE_WORD_THRESHOLD "0.2")
 endif()
 
 # 函数：构建 assets.bin
 function(build_assets_bin)
+    if(NOT CONFIG_ENABLE_ASSETS_BUILD)
+        message(STATUS "Assets 构建已禁用 (Kconfig)")
+        return()
+    endif()
+    
     if(NOT ESP_SR_MODEL_PATH)
         message(WARNING "ESP-SR 模型路径未设置，跳过 assets 打包")
+        return()
+    endif()
+    
+    if(NOT MULTINET_MODELS)
+        message(WARNING "未配置 Multinet 模型，跳过 assets 打包")
         return()
     endif()
     
@@ -157,10 +166,19 @@ function(build_assets_bin)
     # 转换为字符串用于显示
     string(REPLACE ";" " " MULTINET_MODELS_STR "${MULTINET_MODELS}")
     
-    message(STATUS "Assets 打包配置: ${GENERATED_ASSETS_BIN}")
+    message(STATUS "Assets 打包配置 (Kconfig):")
+    message(STATUS "  输出文件: ${GENERATED_ASSETS_BIN}")
     message(STATUS "  Multinet 模型: ${MULTINET_MODELS_STR}")
-    message(STATUS "  中文唤醒词: ${CN_WAKE_WORD}")
-    message(STATUS "  英文唤醒词: ${EN_WAKE_WORD}")
+    if(CN_WAKE_WORD)
+        message(STATUS "  中文唤醒词: ${CN_WAKE_WORD}")
+    else()
+        message(STATUS "  中文唤醒词: (未配置)")
+    endif()
+    if(EN_WAKE_WORD)
+        message(STATUS "  英文唤醒词: ${EN_WAKE_WORD}")
+    else()
+        message(STATUS "  英文唤醒词: (未配置)")
+    endif()
     message(STATUS "  阈值: ${WAKE_WORD_THRESHOLD}")
 endfunction()
 
@@ -169,13 +187,17 @@ partition_table_get_partition_info(size "--partition-name assets" "size")
 partition_table_get_partition_info(offset "--partition-name assets" "offset")
 
 if("${size}" AND "${offset}")
-    # 构建 assets.bin
-    build_assets_bin()
-    
-    # 配置自动烧录（在 flash 目标中）
-    if(DEFINED GENERATED_ASSETS_LOCAL_FILE)
-        esptool_py_flash_to_partition(flash "assets" "${GENERATED_ASSETS_LOCAL_FILE}")
-        message(STATUS "Assets 自动烧录已配置: ${GENERATED_ASSETS_LOCAL_FILE} -> assets 分区")
+    # 构建 assets.bin（仅在启用时）
+    if(CONFIG_ENABLE_ASSETS_BUILD)
+        build_assets_bin()
+        
+        # 配置自动烧录（在 flash 目标中）
+        if(DEFINED GENERATED_ASSETS_LOCAL_FILE)
+            esptool_py_flash_to_partition(flash "assets" "${GENERATED_ASSETS_LOCAL_FILE}")
+            message(STATUS "Assets 自动烧录已配置: ${GENERATED_ASSETS_LOCAL_FILE} -> assets 分区")
+        endif()
+    else()
+        message(STATUS "Assets 构建已禁用 (Kconfig: CONFIG_ENABLE_ASSETS_BUILD=n)")
     endif()
 else()
     message(STATUS "未找到 assets 分区，跳过 assets 打包")

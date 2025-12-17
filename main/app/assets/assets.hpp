@@ -82,8 +82,9 @@ namespace app
              * @param progress_callback 进度回调函数 (progress%, speed)
              * @return true 成功, false 失败
              */
-            bool download(const std::string&                           url,
-                          std::function<void(int progress, size_t speed)> progress_callback = nullptr);
+            bool
+            download(const std::string&                              url,
+                     std::function<void(int progress, size_t speed)> progress_callback = nullptr);
 
         private:
             Assets();
@@ -100,9 +101,8 @@ namespace app
             bool                         partition_valid_ = false;
             bool                         checksum_valid_  = false;
             std::map<std::string, Asset> assets_;
-            srmodel_list_t*              models_list_     = nullptr;
+            srmodel_list_t*              models_list_ = nullptr;
         };
 
     } // namespace assets
 } // namespace app
-

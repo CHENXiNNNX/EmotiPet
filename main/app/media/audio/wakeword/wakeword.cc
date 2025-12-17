@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <deque>
+#include <map>
 
 #include <cJSON.h>
 #include <esp_log.h>
@@ -22,6 +24,8 @@ namespace app
         {
             namespace wakeword
             {
+                const char* WAKEWORD_EVENT_BASE = "WAKEWORD";
+
                 struct Command
                 {
                     std::string command;
@@ -32,16 +36,16 @@ namespace app
                 class CustomWakeWord : public WakeWord
                 {
                 public:
-                    CustomWakeWord()  = default;
+                    CustomWakeWord() = default;
                     ~CustomWakeWord() override;
 
-                    bool init(srmodel_list_t* models_list, int sample_rate,
-                              int channels) override;
+                    bool init(srmodel_list_t* models_list, int sample_rate, int channels) override;
                     bool addCommand(const std::string& command, const std::string& text,
-                                   const std::string& action = "wake") override;
+                                    const std::string& action = "wake") override;
+                    bool removeCommand(const std::string& text) override;
+                    void clearCommands() override;
+                    bool switchModel(const std::string& language) override;
                     void feed(const std::vector<int16_t>& data) override;
-                    void setWakeWordDetected(
-                        std::function<void(const std::string& wake_word)> callback) override;
                     void start() override;
                     void stop() override;
                     bool isRunning() const override
@@ -63,22 +67,22 @@ namespace app
 
                 private:
                     bool parseMultinetConfig();
+                    void postWakeWordEvent(const Command& cmd, float probability);
 
                     esp_mn_iface_t*     multinet_            = nullptr;
                     model_iface_data_t* multinet_model_data_ = nullptr;
                     srmodel_list_t*     models_              = nullptr;
                     char*               mn_name_             = nullptr;
 
-                    std::string         language_    = "cn";
-                    int                 duration_    = 3000;
-                    float               threshold_   = 0.2f;
-                    std::deque<Command> commands_;
-                    int                 sample_rate_ = 16000;
-                    int                 channels_    = 1;
+                    std::string                                language_  = "cn";
+                    int                                        duration_  = 3000;
+                    float                                      threshold_ = 0.2f;
+                    std::map<std::string, std::deque<Command>> commands_by_lang_;
+                    int                                        sample_rate_ = 16000;
+                    int                                        channels_    = 1;
 
                     std::atomic<bool> running_ = false;
-                    std::function<void(const std::string& wake_word)> wake_word_callback_;
-                    std::string                                       last_detected_wake_word_;
+                    std::string       last_detected_wake_word_;
                 };
 
                 CustomWakeWord::~CustomWakeWord()
@@ -145,7 +149,8 @@ namespace app
                         cJSON* commands_json = cJSON_GetObjectItem(multinet_model, "commands");
                         if (cJSON_IsObject(commands_json))
                         {
-                            cJSON* lang_commands = cJSON_GetObjectItem(commands_json, language_.c_str());
+                            cJSON* lang_commands =
+                                cJSON_GetObjectItem(commands_json, language_.c_str());
                             if (cJSON_IsArray(lang_commands))
                             {
                                 int cmd_count = cJSON_GetArraySize(lang_commands);
@@ -158,15 +163,17 @@ namespace app
                                         cJSON* text_json    = cJSON_GetObjectItem(cmd, "text");
                                         cJSON* action_json  = cJSON_GetObjectItem(cmd, "action");
 
-                                        if (cJSON_IsString(command_json) && cJSON_IsString(text_json))
+                                        if (cJSON_IsString(command_json) &&
+                                            cJSON_IsString(text_json))
                                         {
                                             std::string action = "wake";
                                             if (cJSON_IsString(action_json))
                                             {
                                                 action = action_json->valuestring;
                                             }
-                                            commands_.push_back({command_json->valuestring, 
-                                                               text_json->valuestring, action});
+                                            commands_by_lang_[language_].push_back(
+                                                {command_json->valuestring, text_json->valuestring,
+                                                 action});
                                         }
                                     }
                                 }
@@ -191,8 +198,9 @@ namespace app
                                         {
                                             action = action_json->valuestring;
                                         }
-                                        commands_.push_back({command_json->valuestring,
-                                                           text_json->valuestring, action});
+                                        commands_by_lang_[language_].push_back(
+                                            {command_json->valuestring, text_json->valuestring,
+                                             action});
                                     }
                                 }
                             }
@@ -201,6 +209,20 @@ namespace app
 
                     cJSON_Delete(root);
                     return true;
+                }
+
+                void CustomWakeWord::postWakeWordEvent(const Command& cmd, float probability)
+                {
+                    WakeWordEventData event_data{};
+                    strncpy(event_data.text, cmd.text.c_str(), sizeof(event_data.text) - 1);
+                    strncpy(event_data.command, cmd.command.c_str(),
+                            sizeof(event_data.command) - 1);
+                    strncpy(event_data.action, cmd.action.c_str(), sizeof(event_data.action) - 1);
+                    event_data.probability = probability;
+
+                    auto& event_mgr = app::sys::event::EventManager::getInstance();
+                    event_mgr.post(WAKEWORD_EVENT_BASE, WAKEWORD_EVENT_DETECTED,
+                                   {&event_data, sizeof(event_data)});
                 }
 
                 bool CustomWakeWord::init(srmodel_list_t* models_list, int sample_rate,
@@ -246,15 +268,19 @@ namespace app
 
                     multinet_->set_det_threshold(multinet_model_data_, threshold_);
 
+                    // 注册已有的命令词
                     esp_mn_commands_clear();
-                    for (size_t i = 0; i < commands_.size(); i++)
+                    auto& commands = commands_by_lang_[language_];
+                    for (size_t i = 0; i < commands.size(); i++)
                     {
-                        esp_mn_commands_add(static_cast<int>(i + 1), commands_[i].command.c_str());
+                        esp_mn_commands_add(static_cast<int>(i + 1), commands[i].command.c_str());
                     }
-                    esp_mn_commands_update();
+                    if (!commands.empty())
+                    {
+                        esp_mn_commands_update();
+                    }
 
-                    ESP_LOGI(TAG, "唤醒词检测器初始化成功 (模型: %s, 命令词: %d)", 
-                             mn_name_, commands_.size());
+                    ESP_LOGI(TAG, "初始化成功 (模型: %s, 命令词: %zu)", mn_name_, commands.size());
 
                     return true;
                 }
@@ -268,17 +294,131 @@ namespace app
                         return false;
                     }
 
-                    commands_.push_back({command, text, action});
+                    // 存储到当前语言的命令列表
+                    commands_by_lang_[language_].push_back({command, text, action});
 
+                    // 更新 Multinet 命令
+                    auto& commands = commands_by_lang_[language_];
                     esp_mn_commands_clear();
-                    for (size_t i = 0; i < commands_.size(); i++)
+                    for (size_t i = 0; i < commands.size(); i++)
                     {
-                        esp_mn_commands_add(static_cast<int>(i + 1), commands_[i].command.c_str());
+                        esp_mn_commands_add(static_cast<int>(i + 1), commands[i].command.c_str());
                     }
                     esp_mn_commands_update();
 
-                    ESP_LOGI(TAG, "添加命令词: %s (%zu/%zu)", text.c_str(), 
-                             commands_.size(), commands_.size());
+                    return true;
+                }
+
+                bool CustomWakeWord::removeCommand(const std::string& text)
+                {
+                    auto& commands = commands_by_lang_[language_];
+
+                    auto it =
+                        std::find_if(commands.begin(), commands.end(),
+                                     [&text](const Command& cmd) { return cmd.text == text; });
+
+                    if (it == commands.end())
+                    {
+                        return false;
+                    }
+
+                    commands.erase(it);
+
+                    // 重新注册命令
+                    esp_mn_commands_clear();
+                    for (size_t i = 0; i < commands.size(); i++)
+                    {
+                        esp_mn_commands_add(static_cast<int>(i + 1), commands[i].command.c_str());
+                    }
+                    if (!commands.empty())
+                    {
+                        esp_mn_commands_update();
+                    }
+
+                    return true;
+                }
+
+                void CustomWakeWord::clearCommands()
+                {
+                    commands_by_lang_[language_].clear();
+                    esp_mn_commands_clear();
+                }
+
+                bool CustomWakeWord::switchModel(const std::string& language)
+                {
+                    if (models_ == nullptr)
+                    {
+                        ESP_LOGE(TAG, "模型列表为空");
+                        return false;
+                    }
+
+                    // 查找目标语言模型
+                    char* new_mn_name =
+                        esp_srmodel_filter(models_, ESP_MN_PREFIX, language.c_str());
+                    if (new_mn_name == nullptr)
+                    {
+                        ESP_LOGE(TAG, "未找到语言 '%s' 的模型", language.c_str());
+                        return false;
+                    }
+
+                    // 如果是同一个模型，直接返回
+                    if (mn_name_ != nullptr && strcmp(mn_name_, new_mn_name) == 0)
+                    {
+                        return true;
+                    }
+
+                    // 停止当前检测
+                    bool was_running = running_;
+                    stop();
+
+                    // 销毁旧模型
+                    if (multinet_model_data_ != nullptr && multinet_ != nullptr)
+                    {
+                        multinet_->destroy(multinet_model_data_);
+                        multinet_model_data_ = nullptr;
+                    }
+
+                    // 创建新模型
+                    mn_name_  = new_mn_name;
+                    language_ = language;
+
+                    multinet_ = esp_mn_handle_from_name(mn_name_);
+                    if (multinet_ == nullptr)
+                    {
+                        ESP_LOGE(TAG, "创建 Multinet 句柄失败");
+                        return false;
+                    }
+
+                    multinet_model_data_ = multinet_->create(mn_name_, duration_);
+                    if (multinet_model_data_ == nullptr)
+                    {
+                        ESP_LOGE(TAG, "创建 Multinet 模型数据失败");
+                        return false;
+                    }
+
+                    multinet_->set_det_threshold(multinet_model_data_, threshold_);
+
+                    // 恢复该语言的命令词
+                    esp_mn_commands_clear();
+                    auto it = commands_by_lang_.find(language);
+                    if (it != commands_by_lang_.end())
+                    {
+                        for (size_t i = 0; i < it->second.size(); i++)
+                        {
+                            esp_mn_commands_add(static_cast<int>(i + 1),
+                                                it->second[i].command.c_str());
+                        }
+                        esp_mn_commands_update();
+                    }
+
+                    ESP_LOGI(TAG, "切换到模型: %s (命令词: %zu)", mn_name_,
+                             it != commands_by_lang_.end() ? it->second.size() : 0);
+
+                    // 恢复运行状态
+                    if (was_running)
+                    {
+                        start();
+                    }
 
                     return true;
                 }
@@ -290,17 +430,23 @@ namespace app
                         return;
                     }
 
-                    if (commands_.empty())
-                    {
-                        ESP_LOGW(TAG, "未配置命令词");
-                    }
-
                     running_ = true;
+
+                    auto& event_mgr = app::sys::event::EventManager::getInstance();
+                    event_mgr.post(WAKEWORD_EVENT_BASE, WAKEWORD_EVENT_STARTED, {});
                 }
 
                 void CustomWakeWord::stop()
                 {
+                    if (!running_)
+                    {
+                        return;
+                    }
+
                     running_ = false;
+
+                    auto& event_mgr = app::sys::event::EventManager::getInstance();
+                    event_mgr.post(WAKEWORD_EVENT_BASE, WAKEWORD_EVENT_STOPPED, {});
                 }
 
                 void CustomWakeWord::feed(const std::vector<int16_t>& data)
@@ -312,7 +458,7 @@ namespace app
                     }
 
                     std::vector<int16_t> mono_data;
-                    const int16_t*       feed_data = data.data();
+                    int16_t*            feed_data = nullptr;
 
                     if (channels_ == 2)
                     {
@@ -323,35 +469,32 @@ namespace app
                         }
                         feed_data = mono_data.data();
                     }
+                    else
+                    {
+                        feed_data = const_cast<int16_t*>(data.data());
+                    }
 
-                    esp_mn_state_t state =
-                        multinet_->detect(multinet_model_data_, const_cast<int16_t*>(feed_data));
+                    esp_mn_state_t state = multinet_->detect(multinet_model_data_, feed_data);
 
                     if (state == ESP_MN_STATE_DETECTED)
                     {
-                        esp_mn_results_t* results = multinet_->get_results(multinet_model_data_);
+                        esp_mn_results_t* results  = multinet_->get_results(multinet_model_data_);
+                        auto&             commands = commands_by_lang_[language_];
                         if (results != nullptr && results->num > 0)
                         {
                             for (int i = 0; i < results->num; i++)
                             {
                                 int command_id = results->command_id[i];
                                 if (command_id > 0 &&
-                                    command_id <= static_cast<int>(commands_.size()))
+                                    command_id <= static_cast<int>(commands.size()))
                                 {
-                                    const Command& cmd = commands_[command_id - 1];
-
-                                    ESP_LOGI(TAG, "检测到: %s (%.2f)", cmd.text.c_str(),
-                                             results->prob[i]);
+                                    const Command& cmd = commands[command_id - 1];
 
                                     if (cmd.action == "wake")
                                     {
                                         last_detected_wake_word_ = cmd.text;
                                         running_                 = false;
-
-                                        if (wake_word_callback_)
-                                        {
-                                            wake_word_callback_(cmd.text);
-                                        }
+                                        postWakeWordEvent(cmd, results->prob[i]);
                                     }
                                 }
                             }
@@ -364,12 +507,6 @@ namespace app
                     }
                 }
 
-                void CustomWakeWord::setWakeWordDetected(
-                    std::function<void(const std::string& wake_word)> callback)
-                {
-                    wake_word_callback_ = callback;
-                }
-
             } // namespace wakeword
         }     // namespace audio
     }         // namespace media
@@ -379,4 +516,3 @@ app::media::audio::wakeword::WakeWord* createCustomWakeWord()
 {
     return new app::media::audio::wakeword::CustomWakeWord();
 }
-
