@@ -174,18 +174,22 @@ extern "C" void app_main(void)
     }
     app::sys::task::TaskManager::delayMs(500);
 
-    // 测试 7: 加载已保存的凭证
+    // 测试 7: 获取所有已保存的凭证
     ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "=== 测试 7: 加载已保存的凭证 ===");
-    app::network::wifi::Credentials loaded_creds;
-    if (wifi_mgr.loadCredentials(loaded_creds))
+    ESP_LOGI(TAG, "=== 测试 7: 获取所有已保存的凭证 ===");
+    std::vector<app::network::wifi::Credentials> loaded_creds;
+    if (wifi_mgr.getCredentials(loaded_creds))
     {
-        ESP_LOGI(TAG, "凭证加载成功: SSID=%s, Password=%s", loaded_creds.ssid,
-                 loaded_creds.password);
+        ESP_LOGI(TAG, "凭证获取成功，共 %u 个网络:", (unsigned int)loaded_creds.size());
+        for (size_t i = 0; i < loaded_creds.size(); i++)
+        {
+            ESP_LOGI(TAG, "  [%u] SSID=%s, Password=%s", (unsigned int)i,
+                     loaded_creds[i].ssid, loaded_creds[i].password);
+        }
     }
     else
     {
-        ESP_LOGE(TAG, "凭证加载失败");
+        ESP_LOGE(TAG, "凭证获取失败");
     }
     app::sys::task::TaskManager::delayMs(500);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace app
 {
@@ -43,6 +44,13 @@ namespace app
              * @note 系统重启后会重置为 0，适合用于相对时间测量
              */
             int64_t uptimeSec();
+
+            /**
+             * @brief 获取 ISO 8601 格式的时间戳字符串（UTC）
+             * @return ISO 8601 格式的时间戳，如 "2025-03-12T19:00:00Z"
+             * @note 需要先通过 NTP 同步系统时间，否则返回的是未同步的时间
+             */
+            std::string iso8601Timestamp();
 
         } // namespace time
     }     // namespace tool

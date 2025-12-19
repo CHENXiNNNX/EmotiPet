@@ -83,15 +83,7 @@ namespace app
                     ESP_LOGW(TAG, "NTP 未同步，使用系统时间");
                 }
 
-                int64_t timestamp_sec = app::tool::time::unixTimestampSec();
-
-                struct tm tm_info;
-                time_t    time_val = static_cast<time_t>(timestamp_sec);
-                gmtime_r(&time_val, &tm_info);
-
-                char buffer[32];
-                strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &tm_info);
-                return std::string(buffer);
+                return app::tool::time::iso8601Timestamp();
             }
 
             std::string OtaManager::buildUrl(const std::string& server_url,

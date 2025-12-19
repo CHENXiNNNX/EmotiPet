@@ -1,6 +1,7 @@
 #include "time.hpp"
 
 #include <sys/time.h>
+#include <ctime>
 
 #include "esp_timer.h"
 #include "task.hpp"
@@ -41,6 +42,19 @@ namespace app
             int64_t uptimeSec()
             {
                 return esp_timer_get_time() / 1000000LL;
+            }
+
+            std::string iso8601Timestamp()
+            {
+                int64_t timestamp_sec = unixTimestampSec();
+
+                struct tm tm_info;
+                time_t    time_val = static_cast<time_t>(timestamp_sec);
+                gmtime_r(&time_val, &tm_info);
+
+                char buffer[32];
+                strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &tm_info);
+                return std::string(buffer);
             }
 
         } // namespace time

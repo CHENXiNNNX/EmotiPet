@@ -16,5 +16,9 @@ namespace app
         const gpio_num_t I2S_BCLK = GPIO_NUM_9;
         const gpio_num_t I2S_DIN  = GPIO_NUM_10;
         const gpio_num_t I2S_DOUT = GPIO_NUM_8;
+
+        // pa pin
+        const gpio_num_t PA_PIN = GPIO_NUM_48;
+
     } // namespace config
 } // namespace app

@@ -151,9 +151,11 @@ namespace app
 
                 bool saveCredentials(const Credentials& credentials);
 
-                bool loadCredentials(Credentials& credentials);
+                bool getCredentials(std::vector<Credentials>& credentials);
 
                 bool clearCredentials();
+
+                bool removeCredentials(const char* ssid);
 
                 bool hasSavedCredentials();
 

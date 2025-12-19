@@ -8,6 +8,8 @@
 #include <esp_codec_dev_defaults.h>
 #include <mutex>
 
+#include "config/config.hpp"
+
 namespace app
 {
     namespace media
@@ -30,9 +32,9 @@ namespace app
                 bool       input_reference;
 
                 Config()
-                    : i2c_master_handle(nullptr), input_sample_rate(24000),
-                      output_sample_rate(24000), mclk(GPIO_NUM_16), bclk(GPIO_NUM_9),
-                      ws(GPIO_NUM_45), dout(GPIO_NUM_8), din(GPIO_NUM_10), pa_pin(GPIO_NUM_48),
+                    : i2c_master_handle(nullptr), input_sample_rate(16000),
+                      output_sample_rate(16000), mclk(config::I2S_MCLK), bclk(config::I2S_BCLK),
+                      ws(config::I2S_WS), dout(config::I2S_DOUT), din(config::I2S_DIN), pa_pin(config::PA_PIN),
                       es8389_addr(ES8389_CODEC_DEFAULT_ADDR),
                       es7210_addr(ES7210_CODEC_DEFAULT_ADDR), input_reference(false)
                 {

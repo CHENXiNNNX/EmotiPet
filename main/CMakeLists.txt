@@ -1,6 +1,7 @@
 # Define source files
 set(SOURCES "app/assets/assets.cc"
             "app/battery/battery.cc"
+            "app/common/chatbot/handle/message/message.cc"
             "app/common/i2c/i2c.cc"
             "app/common/i2c/qmi8658a/qmi8658a.cc"
             "app/device/button/button.cc"
@@ -33,6 +34,7 @@ set(SOURCES "app/assets/assets.cc"
 set(INCLUDE_DIRS "app"
                  "app/assets"
                  "app/battery"
+                 "app/common/chatbot/handle/message"
                  "app/common/i2c"
                  "app/common/i2c/qmi8658a"
                  "app/device/button" 
@@ -41,6 +43,7 @@ set(INCLUDE_DIRS "app"
                  "app/media/audio"
                  "app/media/audio/processor"
                  "app/media/audio/wakeword"
+                #  "app/media/camera"
                  "app/network"
                  "app/network/bluetooth"
                  "app/network/bluetooth/gatt"
@@ -52,7 +55,7 @@ set(INCLUDE_DIRS "app"
                  "app/system/info"
                  "app/system/power"
                  "app/system/task"
-                 # "app/tool/file"
+                # "app/tool/file"
                  "app/tool/memory"
                  "app/tool/ota"
                  "app/tool/time"
@@ -170,12 +173,12 @@ function(build_assets_bin)
     message(STATUS "  输出文件: ${GENERATED_ASSETS_BIN}")
     message(STATUS "  Multinet 模型: ${MULTINET_MODELS_STR}")
     if(CN_WAKE_WORD)
-        message(STATUS "  中文唤醒词: ${CN_WAKE_WORD}")
+    message(STATUS "  中文唤醒词: ${CN_WAKE_WORD}")
     else()
         message(STATUS "  中文唤醒词: (未配置)")
     endif()
     if(EN_WAKE_WORD)
-        message(STATUS "  英文唤醒词: ${EN_WAKE_WORD}")
+    message(STATUS "  英文唤醒词: ${EN_WAKE_WORD}")
     else()
         message(STATUS "  英文唤醒词: (未配置)")
     endif()
@@ -189,12 +192,12 @@ partition_table_get_partition_info(offset "--partition-name assets" "offset")
 if("${size}" AND "${offset}")
     # 构建 assets.bin（仅在启用时）
     if(CONFIG_ENABLE_ASSETS_BUILD)
-        build_assets_bin()
-        
-        # 配置自动烧录（在 flash 目标中）
-        if(DEFINED GENERATED_ASSETS_LOCAL_FILE)
-            esptool_py_flash_to_partition(flash "assets" "${GENERATED_ASSETS_LOCAL_FILE}")
-            message(STATUS "Assets 自动烧录已配置: ${GENERATED_ASSETS_LOCAL_FILE} -> assets 分区")
+    build_assets_bin()
+    
+    # 配置自动烧录（在 flash 目标中）
+    if(DEFINED GENERATED_ASSETS_LOCAL_FILE)
+        esptool_py_flash_to_partition(flash "assets" "${GENERATED_ASSETS_LOCAL_FILE}")
+        message(STATUS "Assets 自动烧录已配置: ${GENERATED_ASSETS_LOCAL_FILE} -> assets 分区")
         endif()
     else()
         message(STATUS "Assets 构建已禁用 (Kconfig: CONFIG_ENABLE_ASSETS_BUILD=n)")

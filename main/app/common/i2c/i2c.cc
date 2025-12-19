@@ -57,9 +57,8 @@ namespace app
                 }
 
                 initialized_ = true;
-                ESP_LOGI(TAG, "I2C master bus 初始化成功: 端口=%d, sda=%d, scl=%d, 速度=%lu Hz",
-                         config_.port, config_.sda_pin, config_.scl_pin,
-                         static_cast<unsigned long>(config_.clk_speed));
+                ESP_LOGI(TAG, "I2C master bus 初始化成功: 端口=%d, sda=%d, scl=%d",
+                         config_.port, config_.sda_pin, config_.scl_pin);
 
                 return true;
             }

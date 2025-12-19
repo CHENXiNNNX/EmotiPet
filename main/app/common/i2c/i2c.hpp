@@ -4,6 +4,8 @@
 #include <driver/i2c_master.h>
 #include <driver/gpio.h>
 
+#include "config/config.hpp"
+
 namespace app
 {
     namespace common
@@ -18,12 +20,11 @@ namespace app
                 i2c_port_t port;                   // I2C 端口号 (I2C_NUM_0 或 I2C_NUM_1)
                 gpio_num_t sda_pin;                // SDA GPIO 引脚
                 gpio_num_t scl_pin;                // SCL GPIO 引脚
-                uint32_t   clk_speed;              // 时钟速度 (Hz)，默认 100000
                 bool       enable_internal_pullup; // 是否启用内部上拉，默认 true
 
                 Config()
-                    : port(I2C_NUM_1), sda_pin(GPIO_NUM_17), scl_pin(GPIO_NUM_18),
-                      clk_speed(100000), enable_internal_pullup(true)
+                    : port(I2C_NUM_1), sda_pin(config::I2C_SDA), scl_pin(config::I2C_SCL),
+                      enable_internal_pullup(true)
                 {
                 }
             };

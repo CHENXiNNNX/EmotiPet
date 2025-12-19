@@ -1,6 +1,9 @@
 #include "app.hpp"
 
+#include "config/config.hpp"
+#include "network/wifi/wifi.hpp"
 #include "system/event/event.hpp"
+#include "system/info/info.hpp"
 #include "system/task/task.hpp"
 #include "esp_log.h"
 #include "nvs_flash.h"
@@ -24,6 +27,24 @@ namespace app
             return;
         }
 
+        if (!initI2C(app::config::I2C_SDA, app::config::I2C_SCL, I2C_NUM_1))
+        {
+            ESP_LOGE(TAG, "I2C 初始化失败");
+            return;
+        }
+
+        // if (!initQMI8658A(getI2CBusHandle()))
+        // {
+        //     ESP_LOGE(TAG, "QMI8658A 初始化失败");
+        //     return;
+        // }
+
+        // if (!initAudio(getI2CBusHandle(), 16000))
+        // {
+        //     ESP_LOGE(TAG, "Audio 初始化失败");
+        //     return;
+        // }
+
         if (!initProvision())
         {
             ESP_LOGE(TAG, "配网管理器初始化失败");
@@ -34,26 +55,40 @@ namespace app
     void App::run()
     {
         auto& provision = app::network::ProvisionManager::getInstance();
+        auto& wifi   = app::network::wifi::WiFiManager::getInstance();
 
+
+        if (!wifi.hasSavedCredentials())
+        {
+            ESP_LOGE(TAG, "没有保存的 WiFi 凭证");
         // 启动配网
         if (!provision.start())
         {
             ESP_LOGE(TAG, "启动配网失败");
             return;
         }
+        } else{
+            std::vector<app::network::wifi::Credentials> saved_creds;
+            if (wifi.getCredentials(saved_creds) && !saved_creds.empty())
+            {
+                ESP_LOGI(TAG, "已保存的 WiFi 凭证数量: %u", (unsigned int)saved_creds.size());
+                for (size_t i = 0; i < saved_creds.size(); i++)
+                {
+                    ESP_LOGI(TAG, "  [%u] SSID: %s", (unsigned int)i, saved_creds[i].ssid);
+                }
+            }
+        }
 
-        int counter = 0;
         while (true)
         {
-            app::sys::task::TaskManager::delayMs(5000);
+            app::sys::task::TaskManager::delayMs(5000); // 10秒间隔
 
-            counter++;
-
-            // 每 30 秒打印一次状态
-            if (counter % 6 == 0)
-            {
-                logSystemStatus();
-            }
+            // 打印系统信息
+            ESP_LOGI(TAG, "================= 系统信息 ===================");
+            logMemoryInfo();
+            logWiFiInfo();
+            // logQMI8658AInfo();
+            ESP_LOGI(TAG, "==============================================");
         }
     }
 
@@ -78,6 +113,102 @@ namespace app
             return false;
         }
         return true;
+    }
+
+    bool App::initAssets()
+    {
+        auto& assets = app::assets::Assets::getInstance();
+        if (!assets.init())
+        {
+            ESP_LOGE(TAG, "Assets 初始化失败");
+            return false;
+        }
+        return true;
+    }
+
+    bool App::initI2C(gpio_num_t sda, gpio_num_t scl, i2c_port_t port)
+    {
+        common::i2c::Config cfg;
+        cfg.sda_pin = sda;
+        cfg.scl_pin = scl;
+        cfg.port    = port;
+
+        if (!i2c_.init(&cfg))
+        {
+            ESP_LOGE(TAG, "I2C 初始化失败");
+            return false;
+        } else {
+            i2c_.scan(200);
+        }
+        return true;
+    }
+
+    i2c_master_bus_handle_t App::getI2CBusHandle() const
+    {
+        return i2c_.getBusHandle();
+    }
+
+    bool App::initQMI8658A(i2c_master_bus_handle_t i2c_handle)
+    {
+        if (!i2c_handle)
+        {
+            ESP_LOGE(TAG, "I2C 句柄无效");
+            return false;
+        }
+
+        common::i2c::qmi8658a::Config cfg;
+        cfg.i2c_addr    = common::i2c::qmi8658a::QMI8658A_ADDR_LOW;
+        cfg.accel_range = common::i2c::qmi8658a::AccelRange::RANGE_8G;
+        cfg.gyro_range  = common::i2c::qmi8658a::GyroRange::RANGE_512DPS;
+        cfg.accel_odr   = common::i2c::qmi8658a::AccelOdr::ODR_31_25HZ;
+        cfg.gyro_odr    = common::i2c::qmi8658a::GyroOdr::ODR_31_25HZ;
+
+        if (!qmi8658a_.init(i2c_handle, &cfg))
+        {
+            ESP_LOGE(TAG, "QMI8658A 初始化失败");
+            return false;
+        }
+        return true;
+    }
+
+    common::i2c::qmi8658a::Qmi8658a& App::getQMI8658A()
+    {
+        return qmi8658a_;
+    }
+
+    bool App::initAudio(i2c_master_bus_handle_t i2c_handle, int sample_rate)
+    {
+        if (!i2c_handle)
+        {
+            ESP_LOGE(TAG, "I2C 句柄无效");
+            return false;
+        }
+
+        if (sample_rate <= 0)
+        {
+            ESP_LOGE(TAG, "采样率无效: %d", sample_rate);
+            return false;
+        }
+
+        media::audio::Config cfg;
+        cfg.i2c_master_handle  = i2c_handle;
+        cfg.input_sample_rate  = sample_rate;
+        cfg.output_sample_rate = sample_rate; 
+        cfg.input_reference    = false; 
+
+        if (!audio_.init(&cfg))
+        {
+            ESP_LOGE(TAG, "Audio 初始化失败");
+            return false;
+        }
+
+        ESP_LOGI(TAG, "Audio 初始化成功 (采样率=%dHz)", sample_rate);
+        return true;
+    }
+
+    media::audio::Audio& App::getAudio()
+    {
+        return audio_;
     }
 
     bool App::initProvision()
@@ -135,7 +266,21 @@ namespace app
         }
     }
 
-    void App::logSystemStatus()
+    void App::logMemoryInfo()
+    {
+        auto mem_info = app::sys::info::MemoryInfo::getMemoryInfo();
+        auto cpu_info = app::sys::info::CpuInfo::getCpuInfo();
+
+        ESP_LOGI(TAG, "CPU 频率: %lu MHz", cpu_info.getCpuFrequency() / 1000000);
+        ESP_LOGI(TAG, "内部 SRAM: %u / %u KB (空闲/总量)",
+                 (unsigned int)(mem_info.getSramFree() / 1024),
+                 (unsigned int)(mem_info.getSramTotal() / 1024));
+        ESP_LOGI(TAG, "PSRAM: %u / %u KB (空闲/总量)",
+                 (unsigned int)(mem_info.getPsramFree() / 1024),
+                 (unsigned int)(mem_info.getPsramTotal() / 1024));
+    }
+
+    void App::logWiFiInfo()
     {
         auto& provision = app::network::ProvisionManager::getInstance();
         auto  status    = provision.getStatus();
@@ -144,7 +289,18 @@ namespace app
         {
             std::string ssid = provision.getCurrentSsid();
             std::string ip   = provision.getCurrentIp();
-            ESP_LOGI(TAG, "WiFi: %s (%s)", ssid.c_str(), ip.c_str());
+            ESP_LOGI(TAG, "WiFi SSID: %s, IP: %s", ssid.c_str(), ip.c_str());
+        }
+    }
+
+    void App::logQMI8658AInfo(){
+        common::i2c::qmi8658a::SensorData data;
+        common::i2c::qmi8658a::Attitude att;
+        if (qmi8658a_.read(data) && qmi8658a_.readAttitude(att))
+        {
+            ESP_LOGI(TAG, "QMI8658A 加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", data.accel_x, data.accel_y, data.accel_z);
+            ESP_LOGI(TAG, "QMI8658A 角速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f rad/s", data.gyro_x, data.gyro_y, data.gyro_z);
+            ESP_LOGI(TAG, "QMI8658A 姿态:   Roll=%+7.1f°  Pitch=%+7.1f°  Yaw=%+7.1f°", att.roll, att.pitch, att.yaw);
         }
     }
 

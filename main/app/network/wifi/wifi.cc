@@ -3,6 +3,7 @@
 #include <cstring>
 #include <memory>
 #include <vector>
+#include <string>
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
@@ -21,8 +22,101 @@ namespace app
         {
 
             static const char* const NVS_NAMESPACE = "wifi";
-            static const char* const NVS_KEY_SSID  = "ssid";
-            static const char* const NVS_KEY_PASS  = "password";
+            static const char* const NVS_KEY_LIST   = "list";
+
+            static std::string buildPasswordKey(const char* ssid)
+            {
+                std::string key = "pass:";
+                key += ssid;
+                return key;
+            }
+
+            static bool getNetworkList(std::vector<std::string>& ssids)
+            {
+                nvs_handle_t nvs_handle;
+                esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+                if (ret != ESP_OK)
+                {
+                    return false;
+                }
+
+                size_t required_size = 0;
+                ret = nvs_get_str(nvs_handle, NVS_KEY_LIST, nullptr, &required_size);
+                if (ret != ESP_OK || required_size == 0)
+                {
+                    nvs_close(nvs_handle);
+                    return false;
+                }
+
+                char* list_buf = static_cast<char*>(malloc(required_size));
+                if (!list_buf)
+                {
+                    nvs_close(nvs_handle);
+                    return false;
+                }
+
+                ret = nvs_get_str(nvs_handle, NVS_KEY_LIST, list_buf, &required_size);
+                nvs_close(nvs_handle);
+
+                if (ret != ESP_OK)
+                {
+                    free(list_buf);
+                    return false;
+                }
+
+                ssids.clear();
+                char* token = strtok(list_buf, ",");
+                while (token)
+                {
+                    ssids.push_back(std::string(token));
+                    token = strtok(nullptr, ",");
+                }
+
+                free(list_buf);
+                return true;
+            }
+
+            static bool updateNetworkList(const std::vector<std::string>& ssids)
+            {
+                if (ssids.empty())
+                {
+                    nvs_handle_t nvs_handle;
+                    esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+                    if (ret == ESP_OK)
+                    {
+                        nvs_erase_key(nvs_handle, NVS_KEY_LIST);
+                        nvs_commit(nvs_handle);
+                        nvs_close(nvs_handle);
+                    }
+                    return true;
+                }
+
+                std::string list_str;
+                for (size_t i = 0; i < ssids.size(); i++)
+                {
+                    if (i > 0)
+                    {
+                        list_str += ",";
+                    }
+                    list_str += ssids[i];
+                }
+
+                nvs_handle_t nvs_handle;
+                esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+                if (ret != ESP_OK)
+                {
+                    return false;
+                }
+
+                ret = nvs_set_str(nvs_handle, NVS_KEY_LIST, list_str.c_str());
+                if (ret == ESP_OK)
+                {
+                    ret = nvs_commit(nvs_handle);
+                }
+                nvs_close(nvs_handle);
+
+                return ret == ESP_OK;
+            }
 
             WiFiManager::WiFiManager()
                 : initialized_(false), connect_timeout_ms_(0), connect_timeout_set_(false),
@@ -173,10 +267,85 @@ namespace app
                 else
                 {
                     lock.unlock();
-                    if (!loadCredentials(creds))
+
+                    std::vector<Credentials> saved_creds;
+                    if (!getCredentials(saved_creds) || saved_creds.empty())
                     {
                         return false;
                     }
+
+                    if (saved_creds.size() == 1)
+                    {
+                        creds = saved_creds[0];
+                    }
+                    else
+                    {
+                        wifi_scan_config_t scan_config   = {};
+                        scan_config.ssid                 = nullptr;
+                        scan_config.bssid                = nullptr;
+                        scan_config.channel              = 0;
+                        scan_config.show_hidden          = false;
+                        scan_config.scan_type            = WIFI_SCAN_TYPE_ACTIVE;
+                        scan_config.scan_time.active.min = 100;
+                        scan_config.scan_time.active.max = 300;
+
+                        esp_err_t scan_ret = esp_wifi_scan_start(&scan_config, true);
+                        if (scan_ret != ESP_OK)
+                        {
+                            creds = saved_creds[0];
+                        }
+                        else
+                        {
+                            uint16_t ap_count = 0;
+                            esp_wifi_scan_get_ap_num(&ap_count);
+
+                            Credentials best_creds;
+                            int8_t      best_rssi = -100;
+
+                            if (ap_count > 0)
+                            {
+                                wifi_ap_record_t* ap_records =
+                                    static_cast<wifi_ap_record_t*>(heap_caps_malloc(
+                                        ap_count * sizeof(wifi_ap_record_t), MALLOC_CAP_DEFAULT));
+                                if (ap_records != nullptr)
+                                {
+                                    esp_wifi_scan_get_ap_records(&ap_count, ap_records);
+
+                                    for (uint16_t i = 0; i < ap_count; i++)
+                                    {
+                                        const auto& record = ap_records[i];
+                                        const char* ap_ssid =
+                                            reinterpret_cast<const char*>(record.ssid);
+
+                                        for (const auto& saved : saved_creds)
+                                        {
+                                            if (strcmp(ap_ssid, saved.ssid) == 0)
+                                            {
+                                                if (record.rssi > best_rssi)
+                                                {
+                                                    best_rssi  = record.rssi;
+                                                    best_creds = saved;
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    heap_caps_free(ap_records);
+                                }
+                            }
+
+                            if (best_creds.isValid())
+                            {
+                                creds = best_creds;
+                            }
+                            else
+                            {
+                                creds = saved_creds[0];
+                            }
+                        }
+                    }
+
                     lock.lock();
                 }
 
@@ -289,6 +458,29 @@ namespace app
                     return false;
                 }
 
+                std::vector<std::string> ssids;
+                getNetworkList(ssids);
+
+                bool ssid_exists = false;
+                for (const auto& s : ssids)
+                {
+                    if (s == credentials.ssid)
+                    {
+                        ssid_exists = true;
+                        break;
+                    }
+                }
+
+                if (!ssid_exists)
+                {
+                    ssids.push_back(std::string(credentials.ssid));
+                    if (!updateNetworkList(ssids))
+                    {
+                        return false;
+                    }
+                }
+
+                std::string pass_key = buildPasswordKey(credentials.ssid);
                 nvs_handle_t nvs_handle;
                 esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
                 if (ret != ESP_OK)
@@ -296,28 +488,26 @@ namespace app
                     return false;
                 }
 
-                ret = nvs_set_str(nvs_handle, NVS_KEY_SSID, credentials.ssid);
-                if (ret != ESP_OK)
+                ret = nvs_set_str(nvs_handle, pass_key.c_str(), credentials.password);
+                if (ret == ESP_OK)
                 {
-                    nvs_close(nvs_handle);
-                    return false;
-                }
-
-                ret = nvs_set_str(nvs_handle, NVS_KEY_PASS, credentials.password);
-                if (ret != ESP_OK)
-                {
-                    nvs_close(nvs_handle);
-                    return false;
-                }
-
                 ret = nvs_commit(nvs_handle);
+                }
                 nvs_close(nvs_handle);
 
                 return ret == ESP_OK;
             }
 
-            bool WiFiManager::loadCredentials(Credentials& credentials)
+            bool WiFiManager::getCredentials(std::vector<Credentials>& credentials)
             {
+                credentials.clear();
+
+                std::vector<std::string> ssids;
+                if (!getNetworkList(ssids) || ssids.empty())
+                {
+                    return false;
+                }
+
                 nvs_handle_t nvs_handle;
                 esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
                 if (ret != ESP_OK)
@@ -325,29 +515,33 @@ namespace app
                     return false;
                 }
 
-                size_t required_size = sizeof(credentials.ssid);
-                ret = nvs_get_str(nvs_handle, NVS_KEY_SSID, credentials.ssid, &required_size);
-                if (ret != ESP_OK)
+                for (const auto& ssid : ssids)
                 {
-                    nvs_close(nvs_handle);
-                    return false;
-                }
+                    Credentials cred;
+                    strncpy(cred.ssid, ssid.c_str(), sizeof(cred.ssid) - 1);
+                    cred.ssid[sizeof(cred.ssid) - 1] = '\0';
 
-                required_size = sizeof(credentials.password);
-                ret = nvs_get_str(nvs_handle, NVS_KEY_PASS, credentials.password, &required_size);
-                if (ret != ESP_OK)
-                {
-                    nvs_close(nvs_handle);
-                    return false;
+                    std::string pass_key = buildPasswordKey(ssid.c_str());
+                    size_t      required_size = sizeof(cred.password);
+                    ret = nvs_get_str(nvs_handle, pass_key.c_str(), cred.password, &required_size);
+                    if (ret == ESP_OK && cred.isValid())
+                    {
+                        credentials.push_back(cred);
+                    }
                 }
 
                 nvs_close(nvs_handle);
-
-                return credentials.isValid();
+                return !credentials.empty();
             }
 
             bool WiFiManager::clearCredentials()
             {
+                std::vector<std::string> ssids;
+                if (!getNetworkList(ssids))
+                {
+                    return true;
+                }
+
                 nvs_handle_t nvs_handle;
                 esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
                 if (ret != ESP_OK)
@@ -355,29 +549,85 @@ namespace app
                     return false;
                 }
 
-                nvs_erase_key(nvs_handle, NVS_KEY_SSID);
-                nvs_erase_key(nvs_handle, NVS_KEY_PASS);
+                for (const auto& ssid : ssids)
+                {
+                    std::string pass_key = buildPasswordKey(ssid.c_str());
+                    nvs_erase_key(nvs_handle, pass_key.c_str());
+                }
+
+                nvs_erase_key(nvs_handle, NVS_KEY_LIST);
+                ret = nvs_commit(nvs_handle);
+                nvs_close(nvs_handle);
+
+                return ret == ESP_OK;
+            }
+
+            bool WiFiManager::removeCredentials(const char* ssid)
+            {
+                if (!ssid || ssid[0] == '\0')
+                {
+                    return false;
+                }
+
+                std::vector<std::string> ssids;
+                if (!getNetworkList(ssids))
+                {
+                    return false;
+                }
+
+                bool found = false;
+                for (auto it = ssids.begin(); it != ssids.end(); ++it)
+                {
+                    if (*it == ssid)
+                    {
+                        ssids.erase(it);
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+            {
+                    return false;
+                }
+
+                std::string pass_key = buildPasswordKey(ssid);
+                nvs_handle_t nvs_handle;
+                esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+                if (ret != ESP_OK)
+                {
+                    return false;
+                }
+
+                nvs_erase_key(nvs_handle, pass_key.c_str());
+
+                if (!updateNetworkList(ssids))
+                {
+                    nvs_close(nvs_handle);
+                    return false;
+                }
 
                 ret = nvs_commit(nvs_handle);
                 nvs_close(nvs_handle);
+
+                std::unique_lock<std::mutex> lock(mutex_);
+                if (info_.state == State::CONNECTED || info_.state == State::CONNECTING)
+                {
+                    if (strcmp(info_.ssid, ssid) == 0)
+                    {
+                        lock.unlock();
+                        disconnect();
+                        app::sys::task::TaskManager::delayMs(50);
+                    }
+                }
 
                 return ret == ESP_OK;
             }
 
             bool WiFiManager::hasSavedCredentials()
             {
-                nvs_handle_t nvs_handle;
-                esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
-                if (ret != ESP_OK)
-                {
-                    return false;
-                }
-
-                size_t required_size = 0;
-                ret = nvs_get_str(nvs_handle, NVS_KEY_SSID, nullptr, &required_size);
-                nvs_close(nvs_handle);
-
-                return ret == ESP_OK;
+                std::vector<std::string> ssids;
+                return getNetworkList(ssids) && !ssids.empty();
             }
 
             void WiFiManager::handleWiFiEvent(esp_event_base_t                  event_base,
