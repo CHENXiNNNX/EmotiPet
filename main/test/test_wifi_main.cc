@@ -183,8 +183,8 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "凭证获取成功，共 %u 个网络:", (unsigned int)loaded_creds.size());
         for (size_t i = 0; i < loaded_creds.size(); i++)
         {
-            ESP_LOGI(TAG, "  [%u] SSID=%s, Password=%s", (unsigned int)i,
-                     loaded_creds[i].ssid, loaded_creds[i].password);
+            ESP_LOGI(TAG, "  [%u] SSID=%s, Password=%s", (unsigned int)i, loaded_creds[i].ssid,
+                     loaded_creds[i].password);
         }
     }
     else

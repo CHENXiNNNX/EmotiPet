@@ -15,7 +15,7 @@ namespace app
         App()  = default;
         ~App() = default;
 
-        void setup();
+        bool setup();
         void run();
 
         // 获取 I2C 总线句柄

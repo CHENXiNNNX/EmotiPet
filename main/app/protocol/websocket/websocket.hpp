@@ -53,10 +53,10 @@ namespace app
              */
             struct ErrorEvent
             {
-                esp_err_t                      esp_err_code;        // ESP 错误码
-                esp_websocket_error_type_t     error_type;          // WebSocket 错误类型
-                int                            handshake_status;    // 握手状态码
-                std::string                    message;             // 错误消息
+                esp_err_t                  esp_err_code;     // ESP 错误码
+                esp_websocket_error_type_t error_type;       // WebSocket 错误类型
+                int                        handshake_status; // 握手状态码
+                std::string                message;          // 错误消息
             };
 
             // 回调函数类型定义
@@ -71,26 +71,27 @@ namespace app
              */
             struct Config
             {
-                std::string uri;                        // WebSocket URI，例如 "ws://example.com/ws" 或 "wss://example.com/ws"
-                std::string host;                       // 主机地址（可选，URI中包含时可不填）
-                int         port = 0;                   // 端口（可选，URI中包含时可不填）
-                std::string path;                       // 路径（可选，URI中包含时可不填）
-                std::string subprotocol;                // 子协议（可选）
-                std::string headers;                    // 额外的 HTTP 头部（可选）
-                int         ping_interval_sec = 10;     // Ping 间隔（秒）
-                int         pingpong_timeout_sec = 10;  // Pong 超时（秒）
-                int         reconnect_timeout_ms = 10000; // 重连超时（毫秒）
-                int         network_timeout_ms = 10000;   // 网络操作超时（毫秒）
-                bool        disable_auto_reconnect = false; // 禁用自动重连
-                bool        disable_pingpong_discon = false; // 禁用 ping/pong 断开
-                const char* cert_pem = nullptr;        // 服务器证书（WSS时需要）
-                size_t      cert_len = 0;              // 证书长度
+                std::string
+                    uri; // WebSocket URI，例如 "ws://example.com/ws" 或 "wss://example.com/ws"
+                std::string host;        // 主机地址（可选，URI中包含时可不填）
+                int         port = 0;    // 端口（可选，URI中包含时可不填）
+                std::string path;        // 路径（可选，URI中包含时可不填）
+                std::string subprotocol; // 子协议（可选）
+                std::string headers;     // 额外的 HTTP 头部（可选）
+                int         ping_interval_sec       = 10;      // Ping 间隔（秒）
+                int         pingpong_timeout_sec    = 10;      // Pong 超时（秒）
+                int         reconnect_timeout_ms    = 10000;   // 重连超时（毫秒）
+                int         network_timeout_ms      = 10000;   // 网络操作超时（毫秒）
+                bool        disable_auto_reconnect  = false;   // 禁用自动重连
+                bool        disable_pingpong_discon = false;   // 禁用 ping/pong 断开
+                const char* cert_pem                = nullptr; // 服务器证书（WSS时需要）
+                size_t      cert_len                = 0;       // 证书长度
                 bool        skip_cert_common_name_check = false; // 跳过证书通用名检查
             };
 
             /**
              * @brief WebSocket 客户端管理器
-             * 
+             *
              * 提供单例模式的 WebSocket 客户端封装，支持连接、断开、发送和接收消息
              */
             class WebSocketClient
@@ -176,13 +177,13 @@ namespace app
                 void setState(State new_state);
 
                 // 单例模式
-                WebSocketClient()                    = default;
-                ~WebSocketClient()                   = default;
-                WebSocketClient(const WebSocketClient&) = delete;
+                WebSocketClient()                                  = default;
+                ~WebSocketClient()                                 = default;
+                WebSocketClient(const WebSocketClient&)            = delete;
                 WebSocketClient& operator=(const WebSocketClient&) = delete;
 
                 mutable std::mutex mutex_;
-                State              state_ = State::IDLE;
+                State              state_       = State::IDLE;
                 bool               initialized_ = false;
 
                 esp_websocket_client_handle_t client_handle_ = nullptr;
@@ -199,4 +200,3 @@ namespace app
         } // namespace websocket
     }     // namespace protocol
 } // namespace app
-

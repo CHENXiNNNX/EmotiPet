@@ -26,97 +26,98 @@ namespace app
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
 
-                if (initialized_)
-                {
-                    ESP_LOGW(TAG, "WebSocket 客户端已初始化");
-                    return false;
-                }
-
-                config_ = config;
-
-                // 配置 WebSocket 客户端
-                esp_websocket_client_config_t ws_cfg = {};
-                
-                if (!config.uri.empty())
-                {
-                    ws_cfg.uri = config.uri.c_str();
-                }
-                else
-                {
-                    if (!config.host.empty())
+                    if (initialized_)
                     {
-                        ws_cfg.host = config.host.c_str();
+                        ESP_LOGW(TAG, "WebSocket 客户端已初始化");
+                        return false;
                     }
-                    ws_cfg.port = config.port;
-                    if (!config.path.empty())
+
+                    config_ = config;
+
+                    // 配置 WebSocket 客户端
+                    esp_websocket_client_config_t ws_cfg = {};
+
+                    if (!config.uri.empty())
                     {
-                        ws_cfg.path = config.path.c_str();
+                        ws_cfg.uri = config.uri.c_str();
                     }
-                }
+                    else
+                    {
+                        if (!config.host.empty())
+                        {
+                            ws_cfg.host = config.host.c_str();
+                        }
+                        ws_cfg.port = config.port;
+                        if (!config.path.empty())
+                        {
+                            ws_cfg.path = config.path.c_str();
+                        }
+                    }
 
-                if (!config.subprotocol.empty())
-                {
-                    ws_cfg.subprotocol = config.subprotocol.c_str();
-                }
+                    if (!config.subprotocol.empty())
+                    {
+                        ws_cfg.subprotocol = config.subprotocol.c_str();
+                    }
 
-                if (!config.headers.empty())
-                {
-                    ws_cfg.headers = config.headers.c_str();
-                }
+                    if (!config.headers.empty())
+                    {
+                        ws_cfg.headers = config.headers.c_str();
+                    }
 
-                ws_cfg.ping_interval_sec         = config.ping_interval_sec;
-                ws_cfg.pingpong_timeout_sec      = config.pingpong_timeout_sec;
-                ws_cfg.reconnect_timeout_ms      = config.reconnect_timeout_ms;
-                ws_cfg.network_timeout_ms        = config.network_timeout_ms;
-                ws_cfg.disable_auto_reconnect    = config.disable_auto_reconnect;
-                ws_cfg.disable_pingpong_discon   = config.disable_pingpong_discon;
-                ws_cfg.skip_cert_common_name_check = config.skip_cert_common_name_check;
+                    ws_cfg.ping_interval_sec           = config.ping_interval_sec;
+                    ws_cfg.pingpong_timeout_sec        = config.pingpong_timeout_sec;
+                    ws_cfg.reconnect_timeout_ms        = config.reconnect_timeout_ms;
+                    ws_cfg.network_timeout_ms          = config.network_timeout_ms;
+                    ws_cfg.disable_auto_reconnect      = config.disable_auto_reconnect;
+                    ws_cfg.disable_pingpong_discon     = config.disable_pingpong_discon;
+                    ws_cfg.skip_cert_common_name_check = config.skip_cert_common_name_check;
 
-                if (config.cert_pem != nullptr && config.cert_len > 0)
-                {
-                    ws_cfg.cert_pem = config.cert_pem;
-                    ws_cfg.cert_len = config.cert_len;
-                }
+                    if (config.cert_pem != nullptr && config.cert_len > 0)
+                    {
+                        ws_cfg.cert_pem = config.cert_pem;
+                        ws_cfg.cert_len = config.cert_len;
+                    }
 
-                // 判断传输类型（如果 URI 不为空）
-                if (!config.uri.empty())
-                {
-                    ws_cfg.transport = config.uri.find("wss://") == 0 || config.uri.find("https://") == 0
-                                           ? WEBSOCKET_TRANSPORT_OVER_SSL
-                                           : WEBSOCKET_TRANSPORT_OVER_TCP;
-                }
-                else
-                {
-                    // 如果 URI 为空，默认使用 TCP（可以通过 port 判断，443 通常为 SSL）
-                    ws_cfg.transport = (config.port == 443) ? WEBSOCKET_TRANSPORT_OVER_SSL
-                                                            : WEBSOCKET_TRANSPORT_OVER_TCP;
-                }
+                    // 判断传输类型（如果 URI 不为空）
+                    if (!config.uri.empty())
+                    {
+                        ws_cfg.transport =
+                            config.uri.find("wss://") == 0 || config.uri.find("https://") == 0
+                                ? WEBSOCKET_TRANSPORT_OVER_SSL
+                                : WEBSOCKET_TRANSPORT_OVER_TCP;
+                    }
+                    else
+                    {
+                        // 如果 URI 为空，默认使用 TCP（可以通过 port 判断，443 通常为 SSL）
+                        ws_cfg.transport = (config.port == 443) ? WEBSOCKET_TRANSPORT_OVER_SSL
+                                                                : WEBSOCKET_TRANSPORT_OVER_TCP;
+                    }
 
-                // 设置事件处理器
-                ws_cfg.user_context = this;
+                    // 设置事件处理器
+                    ws_cfg.user_context = this;
 
-                // 初始化客户端
-                client_handle_ = esp_websocket_client_init(&ws_cfg);
-                if (client_handle_ == nullptr)
-                {
-                    ESP_LOGE(TAG, "WebSocket 客户端初始化失败");
-                    return false;
-                }
+                    // 初始化客户端
+                    client_handle_ = esp_websocket_client_init(&ws_cfg);
+                    if (client_handle_ == nullptr)
+                    {
+                        ESP_LOGE(TAG, "WebSocket 客户端初始化失败");
+                        return false;
+                    }
 
-                // 注册事件处理器
-                esp_err_t ret = esp_websocket_register_events(
-                    client_handle_, WEBSOCKET_EVENT_ANY, websocketEventHandler, this);
-                if (ret != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "注册事件处理器失败: %s", esp_err_to_name(ret));
-                    esp_websocket_client_destroy(client_handle_);
-                    client_handle_ = nullptr;
-                    return false;
-                }
+                    // 注册事件处理器
+                    esp_err_t ret = esp_websocket_register_events(
+                        client_handle_, WEBSOCKET_EVENT_ANY, websocketEventHandler, this);
+                    if (ret != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "注册事件处理器失败: %s", esp_err_to_name(ret));
+                        esp_websocket_client_destroy(client_handle_);
+                        client_handle_ = nullptr;
+                        return false;
+                    }
 
-                initialized_ = true;
-                state_ = State::INITIALIZED;
-                state_cb = state_callback_;
+                    initialized_ = true;
+                    state_       = State::INITIALIZED;
+                    state_cb     = state_callback_;
                 }
 
                 // 在锁外调用回调
@@ -150,9 +151,9 @@ namespace app
                     client_handle_ = nullptr;
                 }
 
-                initialized_  = false;
-                state_        = State::IDLE;
-                
+                initialized_ = false;
+                state_       = State::IDLE;
+
                 // 清空回调
                 connected_callback_    = nullptr;
                 disconnected_callback_ = nullptr;
@@ -190,7 +191,7 @@ namespace app
                     // 设置状态（在锁内）
                     if (state_ != State::CONNECTING)
                     {
-                        state_ = State::CONNECTING;
+                        state_   = State::CONNECTING;
                         state_cb = state_callback_;
                     }
                 }
@@ -210,7 +211,7 @@ namespace app
                         std::lock_guard<std::mutex> lock(mutex_);
                         if (state_ == State::CONNECTING)
                         {
-                            state_ = State::DISCONNECTED;
+                            state_   = State::DISCONNECTED;
                             state_cb = state_callback_;
                         }
                         else
@@ -265,7 +266,7 @@ namespace app
                         std::lock_guard<std::mutex> lock(mutex_);
                         if (state_ != State::DISCONNECTED)
                         {
-                            state_ = State::DISCONNECTED;
+                            state_   = State::DISCONNECTED;
                             state_cb = state_callback_;
                         }
                     }
@@ -300,8 +301,8 @@ namespace app
                 }
 
                 TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
-                int        sent = esp_websocket_client_send_text(client_handle_, text.c_str(),
-                                                          static_cast<int>(text.length()), timeout_ticks);
+                int        sent          = esp_websocket_client_send_text(
+                                    client_handle_, text.c_str(), static_cast<int>(text.length()), timeout_ticks);
 
                 if (sent < 0)
                 {
@@ -332,9 +333,9 @@ namespace app
                 }
 
                 TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
-                int        sent = esp_websocket_client_send_bin(client_handle_,
-                                                         reinterpret_cast<const char*>(data),
-                                                         static_cast<int>(len), timeout_ticks);
+                int        sent          = esp_websocket_client_send_bin(client_handle_,
+                                                                         reinterpret_cast<const char*>(data),
+                                                                         static_cast<int>(len), timeout_ticks);
 
                 if (sent < 0)
                 {
@@ -405,8 +406,9 @@ namespace app
                     return;
                 }
 
-                esp_websocket_event_id_t ws_event_id = static_cast<esp_websocket_event_id_t>(event_id);
-                auto*                     event_data_ptr = static_cast<esp_websocket_event_data_t*>(event_data);
+                esp_websocket_event_id_t ws_event_id =
+                    static_cast<esp_websocket_event_id_t>(event_id);
+                auto* event_data_ptr = static_cast<esp_websocket_event_data_t*>(event_data);
 
                 switch (ws_event_id)
                 {
@@ -520,13 +522,14 @@ namespace app
                 if (cb)
                 {
                     ErrorEvent event;
-                    event.esp_err_code = event_data->error_handle.esp_tls_last_esp_err;
-                    event.error_type   = event_data->error_handle.error_type;
+                    event.esp_err_code     = event_data->error_handle.esp_tls_last_esp_err;
+                    event.error_type       = event_data->error_handle.error_type;
                     event.handshake_status = event_data->error_handle.esp_ws_handshake_status_code;
 
                     // 生成错误消息
                     char msg[128];
-                    snprintf(msg, sizeof(msg), "WebSocket 错误: type=%d, esp_err=0x%x, handshake=%d",
+                    snprintf(msg, sizeof(msg),
+                             "WebSocket 错误: type=%d, esp_err=0x%x, handshake=%d",
                              event.error_type, event.esp_err_code, event.handshake_status);
                     event.message = msg;
 
@@ -545,9 +548,9 @@ namespace app
                     std::lock_guard<std::mutex> lock(mutex_);
                     if (state_ != new_state)
                     {
-                        state_       = new_state;
+                        state_        = new_state;
                         state_changed = true;
-                        state_cb     = state_callback_;
+                        state_cb      = state_callback_;
                     }
                 }
 
@@ -560,4 +563,3 @@ namespace app
         } // namespace websocket
     }     // namespace protocol
 } // namespace app
-

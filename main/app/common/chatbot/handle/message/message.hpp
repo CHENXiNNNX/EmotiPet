@@ -19,11 +19,11 @@ namespace app
                      */
                     enum class MessageType
                     {
-                        HELLO,      // hello 消息（设备端发送）
-                        HELLO_ACK,  // hello 应答（服务器发送）
-                        COMMAND,    // 命令消息（服务器发送）
-                        RES_SYNC,   // 资源同步（双向）
-                        ERROR       // 错误消息（双向）
+                        HELLO,     // hello 消息（设备端发送）
+                        HELLO_ACK, // hello 应答（服务器发送）
+                        COMMAND,   // 命令消息（服务器发送）
+                        RES_SYNC,  // 资源同步（双向）
+                        ERROR      // 错误消息（双向）
                     };
 
                     /**
@@ -31,10 +31,10 @@ namespace app
                      */
                     struct AudioParams
                     {
-                        std::string format         = "opus";    // 音频格式
-                        int         sample_rate    = 16000;     // 采样率
-                        int         channels       = 1;         // 声道数
-                        int         frame_duration = 60;        // 帧持续时间（毫秒）
+                        std::string format         = "opus"; // 音频格式
+                        int         sample_rate    = 16000;  // 采样率
+                        int         channels       = 1;      // 声道数
+                        int         frame_duration = 60;     // 帧持续时间（毫秒）
                     };
 
                     /**
@@ -74,9 +74,9 @@ namespace app
                      * @return JSON 字符串
                      */
                     std::string buildHelloMessage(const std::string& device_id,
-                                                   const std::string& client_id,
-                                                   const Features&     features,
-                                                   const AudioParams&  audio_params);
+                                                  const std::string& client_id,
+                                                  const Features&    features,
+                                                  const AudioParams& audio_params);
 
                     /**
                      * @brief 构建资源同步消息（设备端发送）
@@ -85,7 +85,7 @@ namespace app
                      * @return JSON 字符串
                      */
                     std::string buildResSyncMessage(const std::string& device_id,
-                                                     const std::string& data = "{}");
+                                                    const std::string& data = "{}");
 
                     /**
                      * @brief 构建错误消息（设备端发送）
@@ -95,7 +95,7 @@ namespace app
                      * @return JSON 字符串
                      */
                     std::string buildErrorMessage(const std::string& device_id, int error_code,
-                                                   const std::string& error_message);
+                                                  const std::string& error_message);
 
                     /**
                      * @brief 解析 hello_ack 消息（服务器发送）
@@ -153,4 +153,3 @@ namespace app
         }         // namespace chatbot
     }             // namespace common
 } // namespace app
-

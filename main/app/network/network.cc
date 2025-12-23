@@ -26,7 +26,7 @@ namespace app
 
         ProvisionManager::ProvisionManager()
             : initialized_(false), provisioning_(false), trying_saved_(false),
-              status_(ProvisionStatus::IDLE)
+              retry_count_(0), status_(ProvisionStatus::IDLE)
         {
         }
 
@@ -172,6 +172,7 @@ namespace app
             if (wifi_mgr.hasSavedCredentials())
             {
                 trying_saved_ = true;
+                retry_count_  = 0; // 重置重试计数器
                 updateStatus(ProvisionStatus::CONNECTING);
 
                 // 尝试连接已保存的网络（30秒超时）
@@ -411,8 +412,30 @@ namespace app
                 }
                 else if (wifi_state == wifi::State::FAILED)
                 {
-                    trying_saved_ = false;
-                    startProvisioning();
+                    retry_count_++;
+                    ESP_LOGW(TAG, "连接已保存的网络失败 (重试 %d/3)", retry_count_);
+
+                    // 重新尝试连接
+                    if (retry_count_ < 3)
+                    {
+                        // 延迟1秒后重试
+                        app::sys::task::TaskManager::delayMs(1000);
+                        if (wifi_mgr.connect(nullptr, nullptr, 30000))
+                        {
+                            return;
+                        }
+                        else
+                        {
+                            ESP_LOGW(TAG, "重连请求发送失败");
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        trying_saved_ = false;
+                        startProvisioning();
+                        return;
+                    }
                 }
                 // 其他状态（CONNECTING）继续等待
                 ProvisionStatus new_status = wifiStateToProvisionStatus(state, reason);

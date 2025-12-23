@@ -14,11 +14,11 @@
 static const char* const TAG = "WebSocketTest";
 
 // WiFi 配置（如果没有保存的凭证，将使用这些）
-#define WIFI_SSID     "yf"      // WiFi SSID
-#define WIFI_PASSWORD "qwer1234"  // WiFi 密码
+#define WIFI_SSID "yf"           // WiFi SSID
+#define WIFI_PASSWORD "qwer1234" // WiFi 密码
 
 // WebSocket 服务器配置
-#define WS_SERVER_URI "ws://10.93.1.49:8080"  // 服务器地址和端口
+#define WS_SERVER_URI "ws://10.93.1.49:8080" // 服务器地址和端口
 
 extern "C" void app_main(void)
 {
@@ -135,11 +135,11 @@ extern "C" void app_main(void)
     using namespace app::common::chatbot::handle::message;
 
     Config ws_config;
-    ws_config.uri                  = WS_SERVER_URI;
-    ws_config.ping_interval_sec    = 10;
-    ws_config.pingpong_timeout_sec = 10;
-    ws_config.reconnect_timeout_ms = 10000;
-    ws_config.network_timeout_ms   = 10000;
+    ws_config.uri                    = WS_SERVER_URI;
+    ws_config.ping_interval_sec      = 10;
+    ws_config.pingpong_timeout_sec   = 10;
+    ws_config.reconnect_timeout_ms   = 10000;
+    ws_config.network_timeout_ms     = 10000;
     ws_config.disable_auto_reconnect = false;
 
     auto& ws_client = WebSocketClient::getInstance();
@@ -217,7 +217,7 @@ extern "C" void app_main(void)
                 case MessageType::ERROR:
                 {
                     std::string from, to, timestamp;
-                    ErrorData error_data;
+                    ErrorData   error_data;
                     if (parseError(json_str, from, to, timestamp, error_data))
                     {
                         ESP_LOGE(TAG, "Error 消息:");
@@ -238,8 +238,8 @@ extern "C" void app_main(void)
         });
 
     // 错误回调
-    ws_client.setErrorCallback(
-        [](const ErrorEvent& event) { ESP_LOGE(TAG, "WebSocket 错误: %s", event.message.c_str()); });
+    ws_client.setErrorCallback([](const ErrorEvent& event)
+                               { ESP_LOGE(TAG, "WebSocket 错误: %s", event.message.c_str()); });
 
     // ========== 7. 连接到 WebSocket 服务器 ==========
     ESP_LOGI(TAG, "[7] 连接到 WebSocket 服务器: %s", WS_SERVER_URI);
@@ -272,8 +272,8 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "[8] 构建并发送 hello 消息...");
 
     // 准备设备信息（实际使用时应该从系统获取）
-    std::string device_id = "aa:bb:cc:dd:ee:ff";  // TODO: 使用实际的 MAC 地址
-    std::string client_id = "test-uuid-12345";    // TODO: 使用实际的 UUID
+    std::string device_id = "aa:bb:cc:dd:ee:ff"; // TODO: 使用实际的 MAC 地址
+    std::string client_id = "test-uuid-12345";   // TODO: 使用实际的 UUID
 
     // 可以生成一个 UUID
     auto uuid = app::tool::uuid::generate();

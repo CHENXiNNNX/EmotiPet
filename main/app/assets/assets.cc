@@ -78,9 +78,8 @@ namespace app
 
             const void* mmap_ptr = nullptr;
             esp_err_t   err      = esp_partition_mmap(partition_, 0, partition_->size,
-                                                     ESP_PARTITION_MMAP_DATA, &mmap_ptr,
-                                                     &mmap_handle_);
-            mmap_root_ = static_cast<const char*>(mmap_ptr);
+                                                      ESP_PARTITION_MMAP_DATA, &mmap_ptr, &mmap_handle_);
+            mmap_root_           = static_cast<const char*>(mmap_ptr);
             if (err != ESP_OK)
             {
                 ESP_LOGE(TAG, "内存映射失败: %s", esp_err_to_name(err));

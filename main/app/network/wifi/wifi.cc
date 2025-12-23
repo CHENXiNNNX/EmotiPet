@@ -22,7 +22,7 @@ namespace app
         {
 
             static const char* const NVS_NAMESPACE = "wifi";
-            static const char* const NVS_KEY_LIST   = "list";
+            static const char* const NVS_KEY_LIST  = "list";
 
             static std::string buildPasswordKey(const char* ssid)
             {
@@ -480,7 +480,7 @@ namespace app
                     }
                 }
 
-                std::string pass_key = buildPasswordKey(credentials.ssid);
+                std::string  pass_key = buildPasswordKey(credentials.ssid);
                 nvs_handle_t nvs_handle;
                 esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
                 if (ret != ESP_OK)
@@ -491,7 +491,7 @@ namespace app
                 ret = nvs_set_str(nvs_handle, pass_key.c_str(), credentials.password);
                 if (ret == ESP_OK)
                 {
-                ret = nvs_commit(nvs_handle);
+                    ret = nvs_commit(nvs_handle);
                 }
                 nvs_close(nvs_handle);
 
@@ -521,7 +521,7 @@ namespace app
                     strncpy(cred.ssid, ssid.c_str(), sizeof(cred.ssid) - 1);
                     cred.ssid[sizeof(cred.ssid) - 1] = '\0';
 
-                    std::string pass_key = buildPasswordKey(ssid.c_str());
+                    std::string pass_key      = buildPasswordKey(ssid.c_str());
                     size_t      required_size = sizeof(cred.password);
                     ret = nvs_get_str(nvs_handle, pass_key.c_str(), cred.password, &required_size);
                     if (ret == ESP_OK && cred.isValid())
@@ -587,11 +587,11 @@ namespace app
                 }
 
                 if (!found)
-            {
+                {
                     return false;
                 }
 
-                std::string pass_key = buildPasswordKey(ssid);
+                std::string  pass_key = buildPasswordKey(ssid);
                 nvs_handle_t nvs_handle;
                 esp_err_t    ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
                 if (ret != ESP_OK)

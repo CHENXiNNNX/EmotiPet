@@ -86,16 +86,16 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "  事件系统初始化成功");
 
     // 注册唤醒词事件
-    event_mgr.registerHandler(WAKEWORD_EVENT_BASE, WAKEWORD_EVENT_DETECTED,
-                              [](esp_event_base_t, EventId, const EventData& data)
-                              {
-                                  const auto* event = static_cast<const WakeWordEventData*>(data.data);
-                                  g_detection_count++;
-                                  ESP_LOGI(TAG, "");
-                                  ESP_LOGI(TAG, "  ★ 检测到唤醒词: %s", event->text);
-                                  ESP_LOGI(TAG, "    置信度: %.2f, 累计次数: %d",
-                                           event->probability, g_detection_count);
-                              });
+    event_mgr.registerHandler(
+        WAKEWORD_EVENT_BASE, WAKEWORD_EVENT_DETECTED,
+        [](esp_event_base_t, EventId, const EventData& data)
+        {
+            const auto* event = static_cast<const WakeWordEventData*>(data.data);
+            g_detection_count++;
+            ESP_LOGI(TAG, "");
+            ESP_LOGI(TAG, "  ★ 检测到唤醒词: %s", event->text);
+            ESP_LOGI(TAG, "    置信度: %.2f, 累计次数: %d", event->probability, g_detection_count);
+        });
 
     event_mgr.registerHandler(WAKEWORD_EVENT_BASE, WAKEWORD_EVENT_STARTED,
                               [](esp_event_base_t, EventId, const EventData&)

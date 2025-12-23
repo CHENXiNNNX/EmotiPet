@@ -458,7 +458,7 @@ namespace app
                     }
 
                     std::vector<int16_t> mono_data;
-                    int16_t*            feed_data = nullptr;
+                    int16_t*             feed_data = nullptr;
 
                     if (channels_ == 2)
                     {

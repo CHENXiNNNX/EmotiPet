@@ -34,8 +34,8 @@ namespace app
                 Config()
                     : i2c_master_handle(nullptr), input_sample_rate(16000),
                       output_sample_rate(16000), mclk(config::I2S_MCLK), bclk(config::I2S_BCLK),
-                      ws(config::I2S_WS), dout(config::I2S_DOUT), din(config::I2S_DIN), pa_pin(config::PA_PIN),
-                      es8389_addr(ES8389_CODEC_DEFAULT_ADDR),
+                      ws(config::I2S_WS), dout(config::I2S_DOUT), din(config::I2S_DIN),
+                      pa_pin(config::PA_PIN), es8389_addr(ES8389_CODEC_DEFAULT_ADDR),
                       es7210_addr(ES7210_CODEC_DEFAULT_ADDR), input_reference(false)
                 {
                 }

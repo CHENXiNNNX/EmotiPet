@@ -37,21 +37,20 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "开始读取传感器数据...\n");
 
     SensorData data;
-    Attitude   att;
     int        count = 0;
 
     while (true)
     {
-        if (imu.read(data) && imu.readAttitude(att))
+        if (imu.read(data))
         {
             count++;
             ESP_LOGI(TAG, "[%d] ========================================", count);
-            ESP_LOGI(TAG, "  加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²",
-                     data.accel_x, data.accel_y, data.accel_z);
-            ESP_LOGI(TAG, "  角速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f rad/s",
-                     data.gyro_x, data.gyro_y, data.gyro_z);
-            ESP_LOGI(TAG, "  姿态:   Roll=%+7.1f°  Pitch=%+7.1f°  Yaw=%+7.1f°",
-                     att.roll, att.pitch, att.yaw);
+            ESP_LOGI(TAG, "  加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", data.accel_x, data.accel_y,
+                     data.accel_z);
+            ESP_LOGI(TAG, "  角速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f rad/s", data.gyro_x, data.gyro_y,
+                     data.gyro_z);
+            ESP_LOGI(TAG, "  姿态:   Roll=%+7.1f°  Pitch=%+7.1f°  Yaw=%+7.1f°", data.roll, data.pitch,
+                     data.yaw);
             ESP_LOGI(TAG, "  温度:   %.1f°C", data.temperature);
             ESP_LOGI(TAG, "========================================\n");
         }

@@ -20,9 +20,9 @@ namespace app
                 {
 
                     std::string buildHelloMessage(const std::string& device_id,
-                                                   const std::string& client_id,
-                                                   const Features&     features,
-                                                   const AudioParams&  audio_params)
+                                                  const std::string& client_id,
+                                                  const Features&    features,
+                                                  const AudioParams& audio_params)
                     {
                         cJSON* json = cJSON_CreateObject();
                         if (!json)
@@ -51,8 +51,10 @@ namespace app
                         cJSON* audio_obj = cJSON_CreateObject();
                         if (audio_obj)
                         {
-                            cJSON_AddStringToObject(audio_obj, "format", audio_params.format.c_str());
-                            cJSON_AddNumberToObject(audio_obj, "sample_rate", audio_params.sample_rate);
+                            cJSON_AddStringToObject(audio_obj, "format",
+                                                    audio_params.format.c_str());
+                            cJSON_AddNumberToObject(audio_obj, "sample_rate",
+                                                    audio_params.sample_rate);
                             cJSON_AddNumberToObject(audio_obj, "channels", audio_params.channels);
                             cJSON_AddNumberToObject(audio_obj, "frame_duration",
                                                     audio_params.frame_duration);
@@ -72,7 +74,7 @@ namespace app
                     }
 
                     std::string buildResSyncMessage(const std::string& device_id,
-                                                     const std::string& data)
+                                                    const std::string& data)
                     {
                         cJSON* json = cJSON_CreateObject();
                         if (!json)
@@ -118,7 +120,7 @@ namespace app
                     }
 
                     std::string buildErrorMessage(const std::string& device_id, int error_code,
-                                                   const std::string& error_message)
+                                                  const std::string& error_message)
                     {
                         cJSON* json = cJSON_CreateObject();
                         if (!json)
@@ -444,4 +446,3 @@ namespace app
         }         // namespace chatbot
     }             // namespace common
 } // namespace app
-

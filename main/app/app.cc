@@ -13,61 +13,67 @@ static const char* const TAG = "App";
 namespace app
 {
 
-    void App::setup()
+    bool App::setup()
     {
         if (!initNVS())
         {
             ESP_LOGE(TAG, "NVS 初始化失败");
-            return;
+            return false;
         }
 
         if (!initEvent())
         {
             ESP_LOGE(TAG, "事件系统初始化失败");
-            return;
+            return false;
         }
 
         if (!initI2C(app::config::I2C_SDA, app::config::I2C_SCL, I2C_NUM_1))
         {
             ESP_LOGE(TAG, "I2C 初始化失败");
-            return;
+            return false;
         }
 
-        // if (!initQMI8658A(getI2CBusHandle()))
-        // {
-        //     ESP_LOGE(TAG, "QMI8658A 初始化失败");
-        //     return;
-        // }
+        if (!initQMI8658A(getI2CBusHandle()))
+        {
+            ESP_LOGE(TAG, "QMI8658A 初始化失败");
+            return false;
+        }
 
-        // if (!initAudio(getI2CBusHandle(), 16000))
-        // {
-        //     ESP_LOGE(TAG, "Audio 初始化失败");
-        //     return;
-        // }
+        if (!initAudio(getI2CBusHandle(), 16000))
+        {
+            ESP_LOGE(TAG, "Audio 初始化失败");
+            return false;
+        }
 
         if (!initProvision())
         {
             ESP_LOGE(TAG, "配网管理器初始化失败");
-            return;
+            return false;
         }
+
+        ESP_LOGI(TAG, "应用初始化成功");
+        return true;
     }
 
     void App::run()
     {
         auto& provision = app::network::ProvisionManager::getInstance();
-        auto& wifi   = app::network::wifi::WiFiManager::getInstance();
+        auto& wifi      = app::network::wifi::WiFiManager::getInstance();
 
+        // wifi.removeCredentials("yf");
 
         if (!wifi.hasSavedCredentials())
         {
             ESP_LOGE(TAG, "没有保存的 WiFi 凭证");
-        // 启动配网
-        if (!provision.start())
-        {
-            ESP_LOGE(TAG, "启动配网失败");
-            return;
+            // 启动配网
+            if (!provision.start())
+            {
+                ESP_LOGE(TAG, "启动配网失败");
+                return;
+            }
         }
-        } else{
+        else
+        {
             std::vector<app::network::wifi::Credentials> saved_creds;
             if (wifi.getCredentials(saved_creds) && !saved_creds.empty())
             {
@@ -76,18 +82,24 @@ namespace app
                 {
                     ESP_LOGI(TAG, "  [%u] SSID: %s", (unsigned int)i, saved_creds[i].ssid);
                 }
+                
+                if (!provision.start())
+                {
+                    ESP_LOGE(TAG, "启动配网失败");
+                    return;
+                }
             }
         }
 
         while (true)
         {
-            app::sys::task::TaskManager::delayMs(5000); // 10秒间隔
+            app::sys::task::TaskManager::delayMs(5000); // 5秒间隔
 
             // 打印系统信息
             ESP_LOGI(TAG, "================= 系统信息 ===================");
             logMemoryInfo();
             logWiFiInfo();
-            // logQMI8658AInfo();
+            logQMI8658AInfo();
             ESP_LOGI(TAG, "==============================================");
         }
     }
@@ -137,7 +149,9 @@ namespace app
         {
             ESP_LOGE(TAG, "I2C 初始化失败");
             return false;
-        } else {
+        }
+        else
+        {
             i2c_.scan(200);
         }
         return true;
@@ -156,14 +170,9 @@ namespace app
             return false;
         }
 
-        common::i2c::qmi8658a::Config cfg;
-        cfg.i2c_addr    = common::i2c::qmi8658a::QMI8658A_ADDR_LOW;
-        cfg.accel_range = common::i2c::qmi8658a::AccelRange::RANGE_8G;
-        cfg.gyro_range  = common::i2c::qmi8658a::GyroRange::RANGE_512DPS;
-        cfg.accel_odr   = common::i2c::qmi8658a::AccelOdr::ODR_31_25HZ;
-        cfg.gyro_odr    = common::i2c::qmi8658a::GyroOdr::ODR_31_25HZ;
-
-        if (!qmi8658a_.init(i2c_handle, &cfg))
+        // 使用新的简化接口（参考 14-handheld）
+        // 默认配置：地址 0x6A, 4G/250Hz 加速度计, 512DPS/250Hz 陀螺仪
+        if (!qmi8658a_.init(i2c_handle, common::i2c::qmi8658a::QMI8658A_ADDR_LOW))
         {
             ESP_LOGE(TAG, "QMI8658A 初始化失败");
             return false;
@@ -193,8 +202,8 @@ namespace app
         media::audio::Config cfg;
         cfg.i2c_master_handle  = i2c_handle;
         cfg.input_sample_rate  = sample_rate;
-        cfg.output_sample_rate = sample_rate; 
-        cfg.input_reference    = false; 
+        cfg.output_sample_rate = sample_rate;
+        cfg.input_reference    = false;
 
         if (!audio_.init(&cfg))
         {
@@ -293,14 +302,18 @@ namespace app
         }
     }
 
-    void App::logQMI8658AInfo(){
+    void App::logQMI8658AInfo()
+    {
         common::i2c::qmi8658a::SensorData data;
-        common::i2c::qmi8658a::Attitude att;
-        if (qmi8658a_.read(data) && qmi8658a_.readAttitude(att))
+        // 读取传感器数据并计算姿态角
+        if (qmi8658a_.read(data, common::i2c::qmi8658a::READ_ALL))
         {
-            ESP_LOGI(TAG, "QMI8658A 加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", data.accel_x, data.accel_y, data.accel_z);
-            ESP_LOGI(TAG, "QMI8658A 角速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f rad/s", data.gyro_x, data.gyro_y, data.gyro_z);
-            ESP_LOGI(TAG, "QMI8658A 姿态:   Roll=%+7.1f°  Pitch=%+7.1f°  Yaw=%+7.1f°", att.roll, att.pitch, att.yaw);
+            ESP_LOGI(TAG, "QMI8658A 加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", data.accel_x,
+                     data.accel_y, data.accel_z);
+            ESP_LOGI(TAG, "QMI8658A 角速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f rad/s", data.gyro_x,
+                     data.gyro_y, data.gyro_z);
+            ESP_LOGI(TAG, "QMI8658A 姿态:   Roll=%+7.1f°  Pitch=%+7.1f°  Yaw=%+7.1f°", data.angle_x,
+                     data.angle_y, data.angle_z);
         }
     }
 
