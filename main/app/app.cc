@@ -169,9 +169,6 @@ namespace app
             ESP_LOGE(TAG, "I2C 句柄无效");
             return false;
         }
-
-        // 使用新的简化接口（参考 14-handheld）
-        // 默认配置：地址 0x6A, 4G/250Hz 加速度计, 512DPS/250Hz 陀螺仪
         if (!qmi8658a_.init(i2c_handle, common::i2c::qmi8658a::QMI8658A_ADDR_LOW))
         {
             ESP_LOGE(TAG, "QMI8658A 初始化失败");
