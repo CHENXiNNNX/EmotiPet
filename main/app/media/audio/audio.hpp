@@ -63,7 +63,7 @@ namespace app
                 }
 
             private:
-                void CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
+                void createDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
                                           gpio_num_t dout, gpio_num_t din);
 
                 const audio_codec_data_if_t* data_if_      = nullptr;

@@ -177,8 +177,8 @@ namespace app
                 void setState(State new_state);
 
                 // 单例模式
-                WebSocketClient()                                  = default;
-                ~WebSocketClient()                                 = default;
+                WebSocketClient()                       = default;
+                ~WebSocketClient();
                 WebSocketClient(const WebSocketClient&)            = delete;
                 WebSocketClient& operator=(const WebSocketClient&) = delete;
 

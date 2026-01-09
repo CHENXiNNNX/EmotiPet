@@ -99,8 +99,8 @@ namespace app
                                                             const HttpRequest&       request);
                 static esp_err_t                httpEventHandler(esp_http_client_event_t* evt);
 
-                HttpClient()                             = default;
-                ~HttpClient()                            = default;
+                HttpClient()                  = default;
+                ~HttpClient();
                 HttpClient(const HttpClient&)            = delete;
                 HttpClient& operator=(const HttpClient&) = delete;
 

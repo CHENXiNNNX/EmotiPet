@@ -53,7 +53,7 @@ namespace app
             return checksum & 0xFFFF;
         }
 
-        bool Assets::initializePartition()
+        bool Assets::initPartition()
         {
             partition_valid_ = false;
             checksum_valid_  = false;
@@ -127,7 +127,7 @@ namespace app
 
         bool Assets::init()
         {
-            return initializePartition();
+            return initPartition();
         }
 
         bool Assets::apply()

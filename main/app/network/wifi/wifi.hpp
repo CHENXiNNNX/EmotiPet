@@ -161,7 +161,7 @@ namespace app
 
             private:
                 WiFiManager();
-                ~WiFiManager()                             = default;
+                ~WiFiManager();
                 WiFiManager(const WiFiManager&)            = delete;
                 WiFiManager& operator=(const WiFiManager&) = delete;
 

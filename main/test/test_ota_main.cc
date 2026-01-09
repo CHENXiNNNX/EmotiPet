@@ -160,7 +160,7 @@ extern "C" void app_main(void)
 
     ntp_mgr.waitSync(10000);
 
-    const std::string server_url = "http://10.93.1.49:5000";
+    const std::string server_url = "http://192.168.50.68:5000";
     app::sys::task::TaskManager::delayMs(2000);
 
     if (ota.checkUpdate(server_url))

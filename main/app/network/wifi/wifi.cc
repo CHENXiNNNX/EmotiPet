@@ -48,31 +48,23 @@ namespace app
                     return false;
                 }
 
-                char* list_buf = static_cast<char*>(malloc(required_size));
-                if (!list_buf)
-                {
-                    nvs_close(nvs_handle);
-                    return false;
-                }
-
-                ret = nvs_get_str(nvs_handle, NVS_KEY_LIST, list_buf, &required_size);
+                std::vector<char> list_buf(required_size);
+                ret = nvs_get_str(nvs_handle, NVS_KEY_LIST, list_buf.data(), &required_size);
                 nvs_close(nvs_handle);
 
                 if (ret != ESP_OK)
                 {
-                    free(list_buf);
                     return false;
                 }
 
                 ssids.clear();
-                char* token = strtok(list_buf, ",");
+                char* token = strtok(list_buf.data(), ",");
                 while (token)
                 {
                     ssids.push_back(std::string(token));
                     token = strtok(nullptr, ",");
                 }
 
-                free(list_buf);
                 return true;
             }
 
@@ -183,6 +175,14 @@ namespace app
                 connect_timeout_set_ = false;
 
                 return true;
+            }
+
+            WiFiManager::~WiFiManager()
+            {
+                if (initialized_)
+                {
+                    deinit();
+                }
             }
 
             void WiFiManager::deinit()
@@ -304,34 +304,27 @@ namespace app
 
                             if (ap_count > 0)
                             {
-                                wifi_ap_record_t* ap_records =
-                                    static_cast<wifi_ap_record_t*>(heap_caps_malloc(
-                                        ap_count * sizeof(wifi_ap_record_t), MALLOC_CAP_DEFAULT));
-                                if (ap_records != nullptr)
+                                std::vector<wifi_ap_record_t> ap_records(ap_count);
+                                esp_wifi_scan_get_ap_records(&ap_count, ap_records.data());
+
+                                for (uint16_t i = 0; i < ap_count; i++)
                                 {
-                                    esp_wifi_scan_get_ap_records(&ap_count, ap_records);
+                                    const auto& record = ap_records[i];
+                                    const char* ap_ssid =
+                                        reinterpret_cast<const char*>(record.ssid);
 
-                                    for (uint16_t i = 0; i < ap_count; i++)
+                                    for (const auto& saved : saved_creds)
                                     {
-                                        const auto& record = ap_records[i];
-                                        const char* ap_ssid =
-                                            reinterpret_cast<const char*>(record.ssid);
-
-                                        for (const auto& saved : saved_creds)
+                                        if (strcmp(ap_ssid, saved.ssid) == 0)
                                         {
-                                            if (strcmp(ap_ssid, saved.ssid) == 0)
+                                            if (record.rssi > best_rssi)
                                             {
-                                                if (record.rssi > best_rssi)
-                                                {
-                                                    best_rssi  = record.rssi;
-                                                    best_creds = saved;
-                                                }
-                                                break;
+                                                best_rssi  = record.rssi;
+                                                best_creds = saved;
                                             }
+                                            break;
                                         }
                                     }
-
-                                    heap_caps_free(ap_records);
                                 }
                             }
 
@@ -719,31 +712,23 @@ namespace app
 
                     if (ap_count > 0)
                     {
-                        aps.reserve(ap_count);
+                        aps.reserve(ap_count); 
+                        std::vector<wifi_ap_record_t> ap_records(ap_count);
+                        esp_wifi_scan_get_ap_records(&ap_count, ap_records.data());
 
-                        wifi_ap_record_t* ap_records =
-                            static_cast<wifi_ap_record_t*>(heap_caps_malloc(
-                                ap_count * sizeof(wifi_ap_record_t), MALLOC_CAP_DEFAULT));
-                        if (ap_records != nullptr)
+                        for (uint16_t i = 0; i < ap_count; i++)
                         {
-                            esp_wifi_scan_get_ap_records(&ap_count, ap_records);
+                            ApInfo      info;
+                            const auto& record = ap_records[i];
+                            strncpy(info.ssid, reinterpret_cast<const char*>(record.ssid),
+                                    sizeof(info.ssid) - 1);
+                            info.ssid[sizeof(info.ssid) - 1] = '\0';
+                            memcpy(info.bssid, record.bssid, sizeof(info.bssid));
+                            info.rssi         = record.rssi;
+                            info.authmode     = record.authmode;
+                            info.is_encrypted = (record.authmode != WIFI_AUTH_OPEN);
 
-                            for (uint16_t i = 0; i < ap_count; i++)
-                            {
-                                ApInfo      info;
-                                const auto& record = ap_records[i];
-                                strncpy(info.ssid, reinterpret_cast<const char*>(record.ssid),
-                                        sizeof(info.ssid) - 1);
-                                info.ssid[sizeof(info.ssid) - 1] = '\0';
-                                memcpy(info.bssid, record.bssid, sizeof(info.bssid));
-                                info.rssi         = record.rssi;
-                                info.authmode     = record.authmode;
-                                info.is_encrypted = (record.authmode != WIFI_AUTH_OPEN);
-
-                                aps.push_back(info);
-                            }
-
-                            heap_caps_free(ap_records);
+                            aps.push_back(info);
                         }
                     }
 

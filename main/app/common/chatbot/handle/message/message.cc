@@ -1,6 +1,7 @@
 #include "message.hpp"
 
 #include <cstring>
+#include <memory>
 
 #include "cJSON.h"
 #include "esp_log.h"
@@ -61,12 +62,11 @@ namespace app
                             cJSON_AddItemToObject(json, "audio_params", audio_obj);
                         }
 
-                        char*       json_str = cJSON_Print(json);
+                        std::unique_ptr<char, decltype(&free)> json_str(cJSON_Print(json), free);
                         std::string result;
                         if (json_str)
                         {
-                            result = json_str;
-                            free(json_str);
+                            result = json_str.get();
                         }
                         cJSON_Delete(json);
 
@@ -107,12 +107,11 @@ namespace app
                             cJSON_AddItemToObject(json, "data", empty_data);
                         }
 
-                        char*       json_str = cJSON_Print(json);
+                        std::unique_ptr<char, decltype(&free)> json_str(cJSON_Print(json), free);
                         std::string result;
                         if (json_str)
                         {
-                            result = json_str;
-                            free(json_str);
+                            result = json_str.get();
                         }
                         cJSON_Delete(json);
 
@@ -145,12 +144,11 @@ namespace app
                             cJSON_AddItemToObject(json, "data", data_obj);
                         }
 
-                        char*       json_str = cJSON_Print(json);
+                        std::unique_ptr<char, decltype(&free)> json_str(cJSON_Print(json), free);
                         std::string result;
                         if (json_str)
                         {
-                            result = json_str;
-                            free(json_str);
+                            result = json_str.get();
                         }
                         cJSON_Delete(json);
 
@@ -312,11 +310,10 @@ namespace app
                         cJSON* data_item = cJSON_GetObjectItem(root, "data");
                         if (data_item && cJSON_IsObject(data_item))
                         {
-                            char* data_str = cJSON_Print(data_item);
+                            std::unique_ptr<char, decltype(&free)> data_str(cJSON_Print(data_item), free);
                             if (data_str)
                             {
-                                data = data_str;
-                                free(data_str);
+                                data = data_str.get();
                             }
                             else
                             {

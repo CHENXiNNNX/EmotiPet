@@ -110,7 +110,7 @@ namespace app
                     return false;
                 }
 
-                CreateDuplexChannels(config_.mclk, config_.bclk, config_.ws, config_.dout,
+                createDuplexChannels(config_.mclk, config_.bclk, config_.ws, config_.dout,
                                      config_.din);
                 audio_codec_i2s_cfg_t i2s_cfg = {
                     .port      = I2S_NUM_0,
@@ -202,7 +202,7 @@ namespace app
                 return true;
             }
 
-            void Audio::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
+            void Audio::createDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
                                              gpio_num_t dout, gpio_num_t din)
             {
                 i2s_chan_config_t chan_cfg = {
