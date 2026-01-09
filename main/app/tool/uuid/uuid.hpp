@@ -63,5 +63,5 @@ namespace app
             bool isEmpty(const Uuid& uuid);
 
         } // namespace uuid
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

@@ -1,4 +1,4 @@
-#include "common/i2c/i2c.hpp"
+#include "i2c/i2c.hpp"
 #include "media/camera/camera.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -9,7 +9,7 @@ static const char* const TAG = "Main";
 extern "C" void app_main(void)
 {
     // 创建 I2C 实例
-    app::common::i2c::I2c i2c;
+    app::i2c::I2c i2c;
 
     // 使用默认配置初始化 I2C
     ESP_LOGI(TAG, "Initializing I2C with default config...");

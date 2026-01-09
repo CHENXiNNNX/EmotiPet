@@ -95,5 +95,5 @@ namespace app
             }
 
         } // namespace uuid
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

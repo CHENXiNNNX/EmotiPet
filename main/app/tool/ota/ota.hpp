@@ -18,7 +18,7 @@ namespace app
 
             /**
              * @brief cJSON RAII 包装器
-             * 
+             *
              * 自动管理 cJSON 对象的生命周期，确保正确释放
              */
             class JsonRAII
@@ -130,7 +130,7 @@ namespace app
 
             /**
              * @brief cJSON_Print 返回字符串的 RAII 包装器
-             * 
+             *
              * 自动管理 cJSON_Print 返回的字符串，使用 free 释放
              */
             class JsonStringRAII
@@ -238,7 +238,7 @@ namespace app
 
             /**
              * @brief mbedtls MD5 上下文 RAII 包装器
-             * 
+             *
              * 自动管理 mbedtls_md5_context 的生命周期
              */
             class Md5ContextRAII
@@ -342,7 +342,7 @@ namespace app
                 std::string getCurrentVersion() const;
 
             private:
-                OtaManager()  = default;
+                OtaManager() = default;
                 ~OtaManager()
                 {
                     deinit();
@@ -378,5 +378,5 @@ namespace app
             };
 
         } // namespace ota
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

@@ -130,11 +130,11 @@ namespace app
             // 启动 BLE 配网（内部方法）
             bool startProvisioning();
 
-            bool                      initialized_;  // 是否已初始化
-            bool                      provisioning_; // 是否正在配网
-            bool                      trying_saved_; // 是否正在尝试连接已保存的网络
-            int                       retry_count_; // 重试计数器（最多3次）
-            ProvisionStatus           status_;       // 当前配网状态
+            bool                      initialized_;       // 是否已初始化
+            bool                      provisioning_;      // 是否正在配网
+            bool                      trying_saved_;      // 是否正在尝试连接已保存的网络
+            int                       retry_count_;       // 重试计数器（最多3次）
+            ProvisionStatus           status_;            // 当前配网状态
             ProvisionStatusCallback   status_callback_;   // 状态回调
             ProvisionCompleteCallback complete_callback_; // 完成回调
             std::string               current_ssid_;      // 当前 SSID

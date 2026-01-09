@@ -37,7 +37,7 @@ namespace app
         const gpio_num_t CAM_PWDN_PIN  = GPIO_NUM_NC; // CAMERA_PIN_PWDN (-1, 不使用)
 
         // camera clock
-        const uint32_t CAM_XCLK_FREQ = 20000000; 
+        const uint32_t CAM_XCLK_FREQ = 20000000;
 
     } // namespace config
 } // namespace app

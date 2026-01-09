@@ -20,7 +20,7 @@ namespace app
 
             /**
              * @brief ESP 堆内存删除器
-             * 
+             *
              * 用于 std::unique_ptr 的自定义删除器，使用 heap_caps_free 释放内存
              */
             struct EspHeapDeleter
@@ -36,7 +36,7 @@ namespace app
 
             /**
              * @brief FreeRTOS 互斥锁 RAII 包装器
-             * 
+             *
              * 自动管理互斥锁的创建和删除，确保资源正确释放
              */
             class MutexRAII
@@ -142,7 +142,7 @@ namespace app
 
             /**
              * @brief 互斥锁锁定守卫类（RAII）
-             * 
+             *
              * 自动管理互斥锁的获取和释放，确保异常安全
              */
             class MutexLockGuard
@@ -257,11 +257,11 @@ namespace app
                 };
 
                 MutexRAII                            mutex_;
-                size_t                                alignment_;
-                double                                expansion_factor_;
-                std::vector<PoolBlock>                pool_blocks_;
-                std::unordered_map<void*, size_t>     pointer_map_;
-                mutable std::multimap<size_t, void*>  free_blocks_by_size_;
+                size_t                               alignment_;
+                double                               expansion_factor_;
+                std::vector<PoolBlock>               pool_blocks_;
+                std::unordered_map<void*, size_t>    pointer_map_;
+                mutable std::multimap<size_t, void*> free_blocks_by_size_;
                 mutable std::unordered_map<void*, std::multimap<size_t, void*>::iterator>
                     free_blocks_iterators_;
 
@@ -275,5 +275,5 @@ namespace app
             };
 
         } // namespace memory
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

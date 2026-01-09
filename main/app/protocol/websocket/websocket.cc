@@ -328,7 +328,7 @@ namespace app
 
                 TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
                 int        sent          = esp_websocket_client_send_text(
-                                    client_handle_, text.c_str(), static_cast<int>(text.length()), timeout_ticks);
+                    client_handle_, text.c_str(), static_cast<int>(text.length()), timeout_ticks);
 
                 if (sent < 0)
                 {
@@ -587,5 +587,5 @@ namespace app
             }
 
         } // namespace websocket
-    }     // namespace protocol
+    } // namespace protocol
 } // namespace app

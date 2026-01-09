@@ -47,13 +47,68 @@ namespace app
                 const char* name;       // 任务名称
                 size_t      stack_size; // 栈大小（字节）
                 Priority    priority;   // 优先级
-                BaseType_t core_id; // 核心 ID（-1 表示不绑定核心，0 或 1 绑定到指定核心）
-                uint32_t delay_ms; // 启动延迟（毫秒）
+                BaseType_t  core_id;    // 核心 ID（-1 表示不绑定核心，0 或 1 绑定到指定核心）
+                uint32_t    delay_ms;   // 启动延迟（毫秒）
 
+                /**
+                 * @brief 默认构造函数
+                 * @note 默认栈大小 4096 字节，适合中等复杂度的任务
+                 *       对于简单任务，建议使用 createLightweight() 或手动设置更小的 stack_size
+                 */
                 Config()
                     : name("Task"), stack_size(4096), priority(Priority::NORMAL), core_id(-1),
                       delay_ms(0)
                 {
+                }
+
+                /**
+                 * @brief 创建轻量级任务配置（栈大小 2048 字节）
+                 * @param name 任务名称
+                 * @param priority 优先级（默认 NORMAL）
+                 * @return 轻量级任务配置
+                 * @note 适合简单任务，如定时器回调、简单数据处理等
+                 */
+                static Config createLightweight(const char* name,
+                                                Priority    priority = Priority::NORMAL)
+                {
+                    Config config;
+                    config.name       = name;
+                    config.stack_size = 2048; // 轻量级任务使用 2KB 栈
+                    config.priority   = priority;
+                    return config;
+                }
+
+                /**
+                 * @brief 创建小型任务配置（栈大小 1024 字节）
+                 * @param name 任务名称
+                 * @param priority 优先级（默认 LOW）
+                 * @return 小型任务配置
+                 * @note 适合非常简单的任务，如 LED 闪烁、简单状态机等
+                 *       注意：栈空间较小，避免深度递归或大局部变量
+                 */
+                static Config createSmall(const char* name, Priority priority = Priority::LOW)
+                {
+                    Config config;
+                    config.name       = name;
+                    config.stack_size = 1024; // 小型任务使用 1KB 栈
+                    config.priority   = priority;
+                    return config;
+                }
+
+                /**
+                 * @brief 创建大型任务配置（栈大小 8192 字节）
+                 * @param name 任务名称
+                 * @param priority 优先级（默认 NORMAL）
+                 * @return 大型任务配置
+                 * @note 适合复杂任务，如网络处理、音频处理、图像处理等
+                 */
+                static Config createLarge(const char* name, Priority priority = Priority::NORMAL)
+                {
+                    Config config;
+                    config.name       = name;
+                    config.stack_size = 8192; // 大型任务使用 8KB 栈
+                    config.priority   = priority;
+                    return config;
                 }
             };
 
@@ -244,5 +299,5 @@ namespace app
             };
 
         } // namespace task
-    }     // namespace sys
+    } // namespace sys
 } // namespace app

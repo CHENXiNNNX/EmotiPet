@@ -1,8 +1,8 @@
 #pragma once
 
 #include "assets/assets.hpp"
-#include "common/i2c/i2c.hpp"
-#include "common/i2c/qmi8658a/qmi8658a.hpp"
+#include "i2c/i2c.hpp"
+#include "device/qmi8658a/qmi8658a.hpp"
 #include "media/audio/audio.hpp"
 #include "network/network.hpp"
 #include <string>
@@ -22,7 +22,7 @@ namespace app
         i2c_master_bus_handle_t getI2CBusHandle() const;
 
         // 获取 QMI8658A 实例
-        common::i2c::qmi8658a::Qmi8658a& getQMI8658A();
+        device::qmi8658a::Qmi8658a& getQMI8658A();
 
         // 获取 Audio 实例
         media::audio::Audio& getAudio();
@@ -65,9 +65,9 @@ namespace app
         void logQMI8658AInfo();
 
         // 成员变量
-        common::i2c::I2c                i2c_;
-        common::i2c::qmi8658a::Qmi8658a qmi8658a_;
-        media::audio::Audio             audio_;
+        i2c::I2c                   i2c_;
+        device::qmi8658a::Qmi8658a qmi8658a_;
+        media::audio::Audio        audio_;
     };
 
 } // namespace app

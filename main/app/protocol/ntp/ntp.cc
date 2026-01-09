@@ -259,5 +259,5 @@ namespace app
             }
 
         } // namespace ntp
-    }     // namespace protocol
+    } // namespace protocol
 } // namespace app

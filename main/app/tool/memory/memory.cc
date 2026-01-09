@@ -13,7 +13,8 @@ namespace app
         {
 
             MemoryPool::MemoryPool(size_t initial_size, size_t alignment, double expansion_factor)
-                : mutex_(MutexRAII::create()), alignment_(alignment), expansion_factor_(expansion_factor)
+                : mutex_(MutexRAII::create()), alignment_(alignment),
+                  expansion_factor_(expansion_factor)
             {
                 // 如果互斥锁创建失败，使用默认对齐方式并返回
                 if (!mutex_.isValid())
@@ -88,7 +89,7 @@ namespace app
 
                 // 将第一个块添加到空闲块列表
                 void* first_block_ptr = reinterpret_cast<uint8_t*>(first_block) + header_size;
-                auto  it              = free_blocks_by_size_.insert({first_block->size, first_block_ptr});
+                auto  it = free_blocks_by_size_.insert({first_block->size, first_block_ptr});
                 free_blocks_iterators_[first_block_ptr] = it;
             }
 
@@ -117,8 +118,8 @@ namespace app
                 if (it != free_blocks_by_size_.end())
                 {
                     found_ptr = it->second;
-                    block     = reinterpret_cast<BlockHeader*>(reinterpret_cast<uint8_t*>(found_ptr) -
-                                                             getHeaderSize());
+                    block = reinterpret_cast<BlockHeader*>(reinterpret_cast<uint8_t*>(found_ptr) -
+                                                           getHeaderSize());
                     auto map_it = pointer_map_.find(found_ptr);
                     if (map_it != pointer_map_.end())
                     {
@@ -193,9 +194,9 @@ namespace app
                                                              getHeaderSize());
 
                 // 标记块为空闲
-                block->is_free = true;
+                block->is_free  = true;
                 void* block_ptr = reinterpret_cast<uint8_t*>(block) + getHeaderSize();
-                auto  it       = free_blocks_by_size_.insert({block->size, block_ptr});
+                auto  it        = free_blocks_by_size_.insert({block->size, block_ptr});
                 free_blocks_iterators_[block_ptr] = it;
 
                 // 合并相邻的空闲块
@@ -411,5 +412,5 @@ namespace app
             }
 
         } // namespace memory
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

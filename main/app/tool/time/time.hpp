@@ -53,5 +53,5 @@ namespace app
             std::string iso8601Timestamp();
 
         } // namespace time
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

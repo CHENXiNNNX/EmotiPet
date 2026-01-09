@@ -355,6 +355,6 @@ namespace app
                 }
 
             } // namespace gatt
-        }     // namespace ble
-    }         // namespace network
+        } // namespace ble
+    } // namespace network
 } // namespace app

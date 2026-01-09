@@ -27,7 +27,7 @@ namespace app
                 gpio_num_t dout;
                 gpio_num_t din;
                 gpio_num_t pa_pin;
-                uint8_t    es8389_addr;
+                uint8_t    es8311_addr;
                 uint8_t    es7210_addr;
                 bool       input_reference;
 
@@ -35,7 +35,7 @@ namespace app
                     : i2c_master_handle(nullptr), input_sample_rate(16000),
                       output_sample_rate(16000), mclk(config::I2S_MCLK), bclk(config::I2S_BCLK),
                       ws(config::I2S_WS), dout(config::I2S_DOUT), din(config::I2S_DIN),
-                      pa_pin(config::PA_PIN), es8389_addr(ES8389_CODEC_DEFAULT_ADDR),
+                      pa_pin(config::PA_PIN), es8311_addr(ES8311_CODEC_DEFAULT_ADDR),
                       es7210_addr(ES7210_CODEC_DEFAULT_ADDR), input_reference(false)
                 {
                 }
@@ -88,5 +88,5 @@ namespace app
                 std::mutex data_if_mutex_;
             };
         } // namespace audio
-    }     // namespace media
+    } // namespace media
 } // namespace app

@@ -73,20 +73,20 @@ namespace app
             {
                 std::string
                     uri; // WebSocket URI，例如 "ws://example.com/ws" 或 "wss://example.com/ws"
-                std::string host;        // 主机地址（可选，URI中包含时可不填）
-                int         port = 0;    // 端口（可选，URI中包含时可不填）
-                std::string path;        // 路径（可选，URI中包含时可不填）
-                std::string subprotocol; // 子协议（可选）
-                std::string headers;     // 额外的 HTTP 头部（可选）
-                int         ping_interval_sec       = 10;      // Ping 间隔（秒）
-                int         pingpong_timeout_sec    = 10;      // Pong 超时（秒）
-                int         reconnect_timeout_ms    = 10000;   // 重连超时（毫秒）
-                int         network_timeout_ms      = 10000;   // 网络操作超时（毫秒）
-                bool        disable_auto_reconnect  = false;   // 禁用自动重连
-                bool        disable_pingpong_discon = false;   // 禁用 ping/pong 断开
-                const char* cert_pem                = nullptr; // 服务器证书（WSS时需要）
-                size_t      cert_len                = 0;       // 证书长度
-                bool        skip_cert_common_name_check = false; // 跳过证书通用名检查
+                std::string host;                             // 主机地址（可选，URI中包含时可不填）
+                int         port = 0;                         // 端口（可选，URI中包含时可不填）
+                std::string path;                             // 路径（可选，URI中包含时可不填）
+                std::string subprotocol;                      // 子协议（可选）
+                std::string headers;                          // 额外的 HTTP 头部（可选）
+                int         ping_interval_sec           = 10; // Ping 间隔（秒）
+                int         pingpong_timeout_sec        = 10; // Pong 超时（秒）
+                int         reconnect_timeout_ms        = 10000;   // 重连超时（毫秒）
+                int         network_timeout_ms          = 10000;   // 网络操作超时（毫秒）
+                bool        disable_auto_reconnect      = false;   // 禁用自动重连
+                bool        disable_pingpong_discon     = false;   // 禁用 ping/pong 断开
+                const char* cert_pem                    = nullptr; // 服务器证书（WSS时需要）
+                size_t      cert_len                    = 0;       // 证书长度
+                bool        skip_cert_common_name_check = false;   // 跳过证书通用名检查
             };
 
             /**
@@ -177,7 +177,7 @@ namespace app
                 void setState(State new_state);
 
                 // 单例模式
-                WebSocketClient()                       = default;
+                WebSocketClient() = default;
                 ~WebSocketClient();
                 WebSocketClient(const WebSocketClient&)            = delete;
                 WebSocketClient& operator=(const WebSocketClient&) = delete;
@@ -198,5 +198,5 @@ namespace app
             };
 
         } // namespace websocket
-    }     // namespace protocol
+    } // namespace protocol
 } // namespace app

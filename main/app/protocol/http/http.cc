@@ -369,5 +369,5 @@ namespace app
             }
 
         } // namespace http
-    }     // namespace protocol
+    } // namespace protocol
 } // namespace app

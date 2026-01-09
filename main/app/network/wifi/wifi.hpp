@@ -192,5 +192,5 @@ namespace app
             };
 
         } // namespace wifi
-    }     // namespace network
+    } // namespace network
 } // namespace app

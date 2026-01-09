@@ -712,7 +712,7 @@ namespace app
 
                     if (ap_count > 0)
                     {
-                        aps.reserve(ap_count); 
+                        aps.reserve(ap_count);
                         std::vector<wifi_ap_record_t> ap_records(ap_count);
                         esp_wifi_scan_get_ap_records(&ap_count, ap_records.data());
 
@@ -845,5 +845,5 @@ namespace app
             }
 
         } // namespace wifi
-    }     // namespace network
+    } // namespace network
 } // namespace app

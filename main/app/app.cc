@@ -82,7 +82,7 @@ namespace app
                 {
                     ESP_LOGI(TAG, "  [%u] SSID: %s", (unsigned int)i, saved_creds[i].ssid);
                 }
-                
+
                 if (!provision.start())
                 {
                     ESP_LOGE(TAG, "启动配网失败");
@@ -140,7 +140,7 @@ namespace app
 
     bool App::initI2C(gpio_num_t sda, gpio_num_t scl, i2c_port_t port)
     {
-        common::i2c::Config cfg;
+        i2c::Config cfg;
         cfg.sda_pin = sda;
         cfg.scl_pin = scl;
         cfg.port    = port;
@@ -169,7 +169,7 @@ namespace app
             ESP_LOGE(TAG, "I2C 句柄无效");
             return false;
         }
-        if (!qmi8658a_.init(i2c_handle, common::i2c::qmi8658a::QMI8658A_ADDR_LOW))
+        if (!qmi8658a_.init(i2c_handle, device::qmi8658a::QMI8658A_ADDR_LOW))
         {
             ESP_LOGE(TAG, "QMI8658A 初始化失败");
             return false;
@@ -177,7 +177,7 @@ namespace app
         return true;
     }
 
-    common::i2c::qmi8658a::Qmi8658a& App::getQMI8658A()
+    device::qmi8658a::Qmi8658a& App::getQMI8658A()
     {
         return qmi8658a_;
     }
@@ -301,9 +301,9 @@ namespace app
 
     void App::logQMI8658AInfo()
     {
-        common::i2c::qmi8658a::SensorData data;
+        device::qmi8658a::SensorData data;
         // 读取传感器数据并计算姿态角
-        if (qmi8658a_.read(data, common::i2c::qmi8658a::READ_ALL))
+        if (qmi8658a_.read(data, device::qmi8658a::READ_ALL))
         {
             ESP_LOGI(TAG, "QMI8658A 加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", data.accel_x,
                      data.accel_y, data.accel_z);

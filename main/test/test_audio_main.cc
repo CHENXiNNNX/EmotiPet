@@ -1,18 +1,18 @@
-#include "common/i2c/i2c.hpp"
+#include "i2c/i2c.hpp"
 #include "media/audio/audio.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-using namespace app::common::i2c;
+using namespace app::i2c;
 using namespace app::media::audio;
 
 static const char* const TAG = "Main";
 
 extern "C" void app_main(void)
 {
-    I2c                      i2c;
-    app::common::i2c::Config i2c_cfg;
+    I2c         i2c;
+    i2c::Config i2c_cfg;
     i2c_cfg.port    = I2C_NUM_1;
     i2c_cfg.sda_pin = GPIO_NUM_17;
     i2c_cfg.scl_pin = GPIO_NUM_18;

@@ -168,7 +168,8 @@ namespace app
                     cJSON_AddStringToObject(fallback_json.get(), "to", "ota_server");
                     cJSON_AddStringToObject(fallback_json.get(), "current_version",
                                             current_version_.c_str());
-                    cJSON_AddStringToObject(fallback_json.get(), "timestamp", getTimestamp().c_str());
+                    cJSON_AddStringToObject(fallback_json.get(), "timestamp",
+                                            getTimestamp().c_str());
 
                     JsonStringRAII json_str(cJSON_Print(fallback_json.get()));
                     return json_str.isValid() ? json_str.toString() : std::string();
@@ -200,7 +201,8 @@ namespace app
                     cJSON_AddStringToObject(fallback_json.get(), "type", "request_firmware");
                     cJSON_AddStringToObject(fallback_json.get(), "from", device_id_.c_str());
                     cJSON_AddStringToObject(fallback_json.get(), "to", "ota_server");
-                    cJSON_AddStringToObject(fallback_json.get(), "timestamp", getTimestamp().c_str());
+                    cJSON_AddStringToObject(fallback_json.get(), "timestamp",
+                                            getTimestamp().c_str());
 
                     JsonRAII data;
                     if (data.isValid())
@@ -243,14 +245,16 @@ namespace app
                     cJSON_AddStringToObject(fallback_json.get(), "type", "report_status");
                     cJSON_AddStringToObject(fallback_json.get(), "from", device_id_.c_str());
                     cJSON_AddStringToObject(fallback_json.get(), "to", "ota_server");
-                    cJSON_AddStringToObject(fallback_json.get(), "timestamp", getTimestamp().c_str());
+                    cJSON_AddStringToObject(fallback_json.get(), "timestamp",
+                                            getTimestamp().c_str());
 
                     JsonRAII data;
                     if (data.isValid())
                     {
                         cJSON_AddNumberToObject(data.get(), "status", status);
                         cJSON_AddNumberToObject(data.get(), "progress", progress);
-                        cJSON_AddStringToObject(data.get(), "current_version", current_version_.c_str());
+                        cJSON_AddStringToObject(data.get(), "current_version",
+                                                current_version_.c_str());
                         cJSON_AddItemToObject(fallback_json.get(), "data", data.release());
                     }
 
@@ -263,7 +267,8 @@ namespace app
                 {
                     cJSON_AddNumberToObject(data.get(), "status", status);
                     cJSON_AddNumberToObject(data.get(), "progress", progress);
-                    cJSON_AddStringToObject(data.get(), "current_version", current_version_.c_str());
+                    cJSON_AddStringToObject(data.get(), "current_version",
+                                            current_version_.c_str());
                     cJSON_AddItemToObject(json.get(), "data", data.release());
                 }
 
@@ -575,9 +580,9 @@ namespace app
                 };
 
                 // 使用智能指针管理上下文，避免内存泄漏
-                auto ctx = std::make_shared<UpdateContext>(server_url, firmware_info, timeout_ms,
-                                                           this, progress_callback_,
-                                                           complete_callback_);
+                auto ctx =
+                    std::make_shared<UpdateContext>(server_url, firmware_info, timeout_ms, this,
+                                                    progress_callback_, complete_callback_);
 
                 // 使用 unique_ptr 管理 shared_ptr 指针，传递给任务函数
                 auto ctx_ptr = std::make_unique<std::shared_ptr<UpdateContext>>(ctx);
@@ -863,8 +868,8 @@ namespace app
 
                 // 释放 ctx_ptr 的所有权，传递给任务（任务函数会负责释放）
                 void* task_param = ctx_ptr.release();
-                auto  task       = std::make_unique<app::sys::task::Task>(task_function, task_config,
-                                                                         task_param);
+                auto  task =
+                    std::make_unique<app::sys::task::Task>(task_function, task_config, task_param);
 
                 if (!task->start())
                 {
@@ -987,5 +992,5 @@ namespace app
             }
 
         } // namespace ota
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

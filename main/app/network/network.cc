@@ -25,8 +25,8 @@ namespace app
         }
 
         ProvisionManager::ProvisionManager()
-            : initialized_(false), provisioning_(false), trying_saved_(false),
-              retry_count_(0), status_(ProvisionStatus::IDLE)
+            : initialized_(false), provisioning_(false), trying_saved_(false), retry_count_(0),
+              status_(ProvisionStatus::IDLE)
         {
         }
 
