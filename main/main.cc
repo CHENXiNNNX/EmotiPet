@@ -1,54 +1,21 @@
-#include "app/i2c/i2c.hpp"
-#include "app/media/camera/camera.hpp"
-#include "app/tool/jpeg/encode/encoder.hpp"
-#include "app/config/config.hpp"
-#include "app/system/task/task.hpp"
-#include <esp_log.h>
-#include <esp_timer.h>
-#include <nvs_flash.h>
+#include "i2c/i2c.hpp"
+#include "media/audio/audio.hpp"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-static const char* TAG = "JPEGTest";
+using namespace app::i2c;
+using namespace app::media::audio;
 
-// 获取格式名称
-const char* getFormatName(app::media::camera::PixelFormat format)
-{
-    switch (format)
-    {
-    case app::media::camera::PixelFormat::RGB565:
-        return "RGB565";
-    case app::media::camera::PixelFormat::RGB24:
-        return "RGB24";
-    case app::media::camera::PixelFormat::YUV422:
-        return "YUV422";
-    case app::media::camera::PixelFormat::YUV420:
-        return "YUV420";
-    case app::media::camera::PixelFormat::JPEG:
-        return "JPEG";
-    default:
-        return "UNKNOWN";
-    }
-}
-
+static const char* const TAG = "Main";
 
 extern "C" void app_main(void)
 {
-    ESP_LOGI(TAG, "=== YUV422 → JPEG 编码测试 ===");
-
-    // 初始化 NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    // 初始化 I2C
-    app::i2c::I2c i2c;
+    I2c         i2c;
     app::i2c::Config i2c_cfg;
-    i2c_cfg.sda_pin = app::config::I2C_SDA;
-    i2c_cfg.scl_pin = app::config::I2C_SCL;
     i2c_cfg.port    = I2C_NUM_1;
+    i2c_cfg.sda_pin = GPIO_NUM_17;
+    i2c_cfg.scl_pin = GPIO_NUM_18;
 
     if (!i2c.init(&i2c_cfg))
     {
@@ -56,82 +23,120 @@ extern "C" void app_main(void)
         return;
     }
 
-    // 初始化摄像头
-    app::media::camera::Camera camera;
-    app::media::camera::Config cam_cfg;
-    cam_cfg.i2c_handle = i2c.getBusHandle();
-    cam_cfg.xclk_freq = app::config::CAM_XCLK_FREQ;
-
-    if (!camera.init(&cam_cfg))
+    i2c_master_bus_handle_t i2c_bus = i2c.getBusHandle();
+    if (i2c_bus == nullptr)
     {
-        ESP_LOGE(TAG, "摄像头初始化失败");
+        ESP_LOGE(TAG, "I2C bus 句柄为空");
         return;
     }
 
-    // 检查格式
-    if (camera.getPixelFormat() != app::media::camera::PixelFormat::YUV422)
+    i2c.scan(200);
+
+    app::media::audio::Config audio_cfg;
+    audio_cfg.i2c_master_handle  = i2c_bus;
+    audio_cfg.input_sample_rate  = 16000;
+    audio_cfg.output_sample_rate = 16000;
+    audio_cfg.input_reference    = false;
+
+    audio_cfg.mclk = GPIO_NUM_16;
+    audio_cfg.ws   = GPIO_NUM_45;
+    audio_cfg.bclk = GPIO_NUM_9;
+    audio_cfg.din  = GPIO_NUM_10;
+    audio_cfg.dout = GPIO_NUM_8;
+
+    audio_cfg.pa_pin      = GPIO_NUM_48;
+    audio_cfg.es8311_addr = ES8311_CODEC_DEFAULT_ADDR;
+    audio_cfg.es7210_addr = ES7210_CODEC_DEFAULT_ADDR;
+
+    Audio audio;
+    if (!audio.init(&audio_cfg))
     {
-        ESP_LOGE(TAG, "当前格式不是 YUV422: %s", getFormatName(camera.getPixelFormat()));
+        ESP_LOGE(TAG, "Audio 初始化失败");
         return;
     }
 
-    ESP_LOGI(TAG, "摄像头就绪: %s %dx%d YUV422", 
-             camera.getSensorName().c_str(),
-             camera.getResolution().width, camera.getResolution().height);
+    audio.setOutputVolume(100);
+    audio.enableOutput(true);
+    audio.enableInput(true);
 
-    // 预热
-    for (int i = 0; i < 3; i++)
+    if (audio_cfg.input_reference)
     {
-        app::media::camera::FrameBuffer frame;
-        camera.capture(frame, 0);
-        app::sys::task::TaskManager::delayMs(100);
+        // 参考信号模式：8 通道 (4 麦克风 + 4 参考信号)
+        const int frame_samples = 160;
+        int16_t   buffer[frame_samples * 8];
+        int16_t   mic[frame_samples * 4];
+        int16_t   ref[frame_samples * 4];
+
+        while (true)
+        {
+            int frames = audio.read(buffer, frame_samples);
+            if (frames > 0)
+            {
+                // 分离麦克风和参考信号
+                for (int i = 0; i < frames; ++i)
+                {
+                    mic[i * 4 + 0] = buffer[i * 8 + 0];  // mic1
+                    ref[i * 4 + 0] = buffer[i * 8 + 1];  // ref1
+                    mic[i * 4 + 1] = buffer[i * 8 + 2];  // mic2
+                    ref[i * 4 + 1] = buffer[i * 8 + 3];  // ref2
+                    mic[i * 4 + 2] = buffer[i * 8 + 4];  // mic3
+                    ref[i * 4 + 2] = buffer[i * 8 + 5];  // ref3
+                    mic[i * 4 + 3] = buffer[i * 8 + 6];  // mic4
+                    ref[i * 4 + 3] = buffer[i * 8 + 7];  // ref4
+                }
+
+                // 简单波束成形：4 个麦克风平均
+                int16_t output[frame_samples];
+                for (int i = 0; i < frames; ++i)
+                {
+                    int32_t sum = (int32_t)mic[i * 4 + 0] + mic[i * 4 + 1] + 
+                                  mic[i * 4 + 2] + mic[i * 4 + 3];
+                    output[i] = sum / 4;
+                }
+                audio.write(output, frames);
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
     }
-
-    // 开始测试循环
-    int test_count = 0;
-    
-    while (true)
+    else
     {
-        test_count++;
-        int64_t start_time = esp_timer_get_time();
-        
-        // 捕获帧
-        app::media::camera::FrameBuffer frame;
-        if (!camera.capture(frame, 2))
+        // 普通模式：4 个麦克风
+        const int frame_samples = 160;
+        int16_t   buffer[frame_samples * 4];  // 4 通道交错数据
+        int16_t   mic1[frame_samples];
+        int16_t   mic2[frame_samples];
+        int16_t   mic3[frame_samples];
+        int16_t   mic4[frame_samples];
+        int16_t   output[frame_samples];
+
+        ESP_LOGI(TAG, "开始 4 麦克风采集和播放...");
+
+        while (true)
         {
-            ESP_LOGE(TAG, "[#%d] 捕获失败", test_count);
-            app::sys::task::TaskManager::delayMs(3000);
-            continue;
+            int n = audio.read(buffer, frame_samples);
+            if (n > 0)
+            {
+                // 分离 4 个麦克风的数据
+                for (int i = 0; i < n; i++)
+                {
+                    mic1[i] = buffer[i * 4 + 0];
+                    mic2[i] = buffer[i * 4 + 1];
+                    mic3[i] = buffer[i * 4 + 2];
+                    mic4[i] = buffer[i * 4 + 3];
+                }
+
+                // 简单的波束成形：4 个麦克风平均（降噪效果）
+                for (int i = 0; i < n; i++)
+                {
+                    int32_t sum = (int32_t)mic1[i] + mic2[i] + mic3[i] + mic4[i];
+                    output[i] = sum / 4;
+                }
+
+                // 播放融合后的音频
+                audio.write(mic1, n);
+
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
-
-        // JPEG 编码
-        app::tool::jpeg::encode::EncodeConfig encode_config;
-        encode_config.quality = 80;
-        encode_config.use_psram = true;
-
-        int64_t encode_start = esp_timer_get_time();
-        auto jpeg_result = app::tool::jpeg::encode::encodeYUV422ToJPEG(
-            frame.data, frame.res.width, frame.res.height, &encode_config);
-        int64_t encode_time = esp_timer_get_time() - encode_start;
-        int64_t total_time = esp_timer_get_time() - start_time;
-
-        if (jpeg_result)
-        {
-            float compression_ratio = (jpeg_result.len() * 100.0f) / frame.len;
-            ESP_LOGI(TAG, "[#%d] 成功 | YUV: %.1fKB → JPEG: %.1fKB (%.1f%%) | 编码: %ums | 总计: %ums",
-                     test_count,
-                     frame.len / 1024.0f,
-                     jpeg_result.len() / 1024.0f,
-                     compression_ratio,
-                     (unsigned int)(encode_time / 1000),
-                     (unsigned int)(total_time / 1000));
-        }
-        else
-        {
-            ESP_LOGE(TAG, "[#%d] JPEG 编码失败", test_count);
-        }
-
-        app::sys::task::TaskManager::delayMs(3000);
     }
 }
-
