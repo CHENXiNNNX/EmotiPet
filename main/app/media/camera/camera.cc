@@ -1,17 +1,20 @@
 #include "camera.hpp"
-#include "esp_log.h"
-#include "esp_cam_ctlr_dvp.h"
-#include "esp_video_init.h"
-#include "esp_video_device.h"
-#include "linux/videodev2.h"
+
+#include <esp_cam_ctlr_dvp.h>
+#include <esp_heap_caps.h>
+#include <esp_log.h>
+#include <esp_video_device.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <errno.h>
 #include <cstring>
 
 static const char* const TAG = "Camera";
+
+#ifndef MAP_FAILED
+#define MAP_FAILED nullptr
+#endif
 
 namespace app
 {
@@ -19,52 +22,16 @@ namespace app
     {
         namespace camera
         {
-            Camera::Camera() 
-                : initialized_(false), device_fd_(-1), buffer_count_(0), streaming_(false)
+
+            Camera::Camera()
+                : initialized_(false), video_fd_(-1), streaming_on_(false),
+                  current_format_(PixelFormat::UNKNOWN), sensor_format_(0)
             {
-                memset(buffers_, 0, sizeof(buffers_));
-                memset(buffer_sizes_, 0, sizeof(buffer_sizes_));
             }
 
             Camera::~Camera()
             {
                 deinit();
-            }
-
-            bool Camera::deinit()
-            {
-                if (!initialized_)
-                {
-                    return true;  // 已经反初始化，返回成功
-                }
-
-                ESP_LOGI(TAG, "开始释放摄像头资源...");
-
-                // 停止流
-                stopStream();
-
-                // 清理缓冲区
-                cleanupBuffers();
-
-                // 关闭设备
-                if (device_fd_ >= 0)
-                {
-                    close(device_fd_);
-                    device_fd_ = -1;
-                }
-
-                // 反初始化视频系统
-                esp_err_t ret = esp_video_deinit();
-                if (ret != ESP_OK)
-                {
-                    ESP_LOGE(TAG, "esp_video_deinit 失败: %s", esp_err_to_name(ret));
-                    initialized_ = false;
-                    return false;
-                }
-
-                initialized_ = false;
-                ESP_LOGI(TAG, "摄像头资源释放完成");
-                return true;
             }
 
             bool Camera::init(const Config* config)
@@ -75,53 +42,129 @@ namespace app
                     return true;
                 }
 
-                if (config != nullptr)
+                // 使用默认配置或用户配置
+                if (config)
                 {
                     config_ = *config;
                 }
-
-                if (config_.i2c_master_handle == nullptr)
+                else
                 {
-                    ESP_LOGE(TAG, "I2C master handle 为空");
+                    // 使用默认配置
+                    config_.xclk_freq = app::config::CAM_XCLK_FREQ;
+                    config_.resolution = Resolution(240, 240);
+                    config_.pixel_format = PixelFormat::RGB565;
+                }
+
+                if (!config_.i2c_handle)
+                {
+                    ESP_LOGE(TAG, "I2C 句柄无效");
                     return false;
                 }
 
-                // 配置 DVP 视频设备
-                esp_video_init_dvp_config_t dvp_config = {};
+                // 初始化 DVP 设备
+                if (!initDvpDevice())
+                {
+                    ESP_LOGE(TAG, "DVP 设备初始化失败");
+                    return false;
+                }
 
-                // 配置 SCCB (I2C)
-                dvp_config.sccb_config.init_sccb  = false; // 不初始化 I2C，使用已有的
-                dvp_config.sccb_config.i2c_handle = config_.i2c_master_handle;
-                dvp_config.sccb_config.freq       = config_.sccb_freq;
+                // 初始化 V4L2 设备
+                if (!initV4l2Device())
+                {
+                    ESP_LOGE(TAG, "V4L2 设备初始化失败");
+                    deinit();
+                    return false;
+                }
 
-                // 配置摄像头控制引脚
-                dvp_config.reset_pin = config_.reset_pin;
-                dvp_config.pwdn_pin  = config_.pwdn_pin;
+                initialized_ = true;
+                ESP_LOGI(TAG, "摄像头初始化成功: %s, %dx%d", sensor_name_.c_str(),
+                         current_resolution_.width, current_resolution_.height);
 
-                // 配置 DVP 数据和控制引脚
-                dvp_config.dvp_pin.data_width = CAM_CTLR_DATA_WIDTH_8;
-                dvp_config.dvp_pin.data_io[0] = config_.dvp_d0;
-                dvp_config.dvp_pin.data_io[1] = config_.dvp_d1;
-                dvp_config.dvp_pin.data_io[2] = config_.dvp_d2;
-                dvp_config.dvp_pin.data_io[3] = config_.dvp_d3;
-                dvp_config.dvp_pin.data_io[4] = config_.dvp_d4;
-                dvp_config.dvp_pin.data_io[5] = config_.dvp_d5;
-                dvp_config.dvp_pin.data_io[6] = config_.dvp_d6;
-                dvp_config.dvp_pin.data_io[7] = config_.dvp_d7;
-                dvp_config.dvp_pin.vsync_io   = config_.dvp_vsync;
-                dvp_config.dvp_pin.de_io      = config_.dvp_de;
-                dvp_config.dvp_pin.pclk_io    = config_.dvp_pclk;
-                dvp_config.dvp_pin.xclk_io    = config_.dvp_xclk;
+                return true;
+            }
 
-                // 配置输出时钟频率
-                dvp_config.xclk_freq = config_.xclk_freq;
+            void Camera::deinit()
+            {
+                if (!initialized_)
+                {
+                    return;
+                }
 
-                // 创建视频初始化配置
+                // 停止视频流
+                if (streaming_on_ && video_fd_ >= 0)
+                {
+                    int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                    ioctl(video_fd_, VIDIOC_STREAMOFF, &type);
+                    streaming_on_ = false;
+                }
+
+                // 释放 mmap 缓冲区
+                for (auto& buf : mmap_buffers_)
+                {
+                    if (buf.start && buf.length)
+                    {
+                        munmap(buf.start, buf.length);
+                    }
+                }
+                mmap_buffers_.clear();
+
+                // 关闭设备
+                if (video_fd_ >= 0)
+                {
+                    close(video_fd_);
+                    video_fd_ = -1;
+                }
+
+                // 反初始化 esp_video
+                esp_video_deinit();
+
+                initialized_ = false;
+                sensor_format_ = 0;
+                ESP_LOGI(TAG, "摄像头已反初始化");
+            }
+
+            bool Camera::initDvpDevice()
+            {
+                // 配置 DVP 引脚
+                static esp_cam_ctlr_dvp_pin_config_t dvp_pin_config = {
+                    .data_width = CAM_CTLR_DATA_WIDTH_8,
+                    .data_io = {
+                        [0] = app::config::CAM_DVP_D0,
+                        [1] = app::config::CAM_DVP_D1,
+                        [2] = app::config::CAM_DVP_D2,
+                        [3] = app::config::CAM_DVP_D3,
+                        [4] = app::config::CAM_DVP_D4,
+                        [5] = app::config::CAM_DVP_D5,
+                        [6] = app::config::CAM_DVP_D6,
+                        [7] = app::config::CAM_DVP_D7,
+                    },
+                    .vsync_io = app::config::CAM_DVP_VSYNC,
+                    .de_io = app::config::CAM_DVP_DE,
+                    .pclk_io = app::config::CAM_DVP_PCLK,
+                    .xclk_io = app::config::CAM_DVP_XCLK,
+                };
+
+                // 配置 SCCB (复用 I2C)
+                esp_video_init_sccb_config_t sccb_config = {
+                    .init_sccb = false,              // 使用已有的 I2C
+                    .i2c_handle = config_.i2c_handle,
+                    .freq = 100000,                  // 100kHz
+                };
+
+                // 配置 DVP 接口
+                esp_video_init_dvp_config_t dvp_config = {
+                    .sccb_config = sccb_config,
+                    .reset_pin = app::config::CAM_RESET_PIN,
+                    .pwdn_pin = app::config::CAM_PWDN_PIN,
+                    .dvp_pin = dvp_pin_config,
+                    .xclk_freq = config_.xclk_freq,
+                };
+
+                // 初始化视频系统
                 esp_video_init_config_t video_config = {
                     .dvp = &dvp_config,
                 };
 
-                // 初始化视频系统
                 esp_err_t ret = esp_video_init(&video_config);
                 if (ret != ESP_OK)
                 {
@@ -129,229 +172,349 @@ namespace app
                     return false;
                 }
 
-                ESP_LOGI(TAG, "视频系统初始化成功");
+                ESP_LOGI(TAG, "DVP 设备初始化成功");
+                return true;
+            }
 
-                // 打开 DVP 视频设备
-                device_fd_ = open(ESP_VIDEO_DVP_DEVICE_NAME, O_RDWR);
-                if (device_fd_ < 0)
+            bool Camera::initV4l2Device()
+            {
+                // 打开视频设备（DVP 接口）
+                const char* video_device = ESP_VIDEO_DVP_DEVICE_NAME;
+                video_fd_ = open(video_device, O_RDWR);
+                if (video_fd_ < 0)
                 {
-                    ESP_LOGE(TAG, "打开视频设备失败: %s", ESP_VIDEO_DVP_DEVICE_NAME);
-                    esp_video_deinit();
+                    ESP_LOGE(TAG, "打开 %s 失败: %d", video_device, errno);
                     return false;
                 }
-
-                ESP_LOGI(TAG, "打开视频设备成功: %s (fd=%d)", ESP_VIDEO_DVP_DEVICE_NAME,
-                         device_fd_);
 
                 // 查询设备能力
-                struct v4l2_capability cap;
-                if (ioctl(device_fd_, VIDIOC_QUERYCAP, &cap) == 0)
+                struct v4l2_capability cap = {};
+                if (ioctl(video_fd_, VIDIOC_QUERYCAP, &cap) != 0)
                 {
-                    ESP_LOGI(TAG, "设备信息:");
-                    ESP_LOGI(TAG, "  驱动: %s", cap.driver);
-                    ESP_LOGI(TAG, "  设备: %s", cap.card);
-                    ESP_LOGI(TAG, "  总线: %s", cap.bus_info);
-                    ESP_LOGI(TAG, "  版本: %d.%d.%d", (cap.version >> 16) & 0xFF,
-                             (cap.version >> 8) & 0xFF, cap.version & 0xFF);
-                }
-                else
-                {
-                    ESP_LOGW(TAG, "查询设备能力失败");
+                    ESP_LOGE(TAG, "VIDIOC_QUERYCAP 失败: %d", errno);
+                    return false;
                 }
 
-                // 设置图像格式
-                struct v4l2_format fmt  = {};
-                fmt.type                = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-                fmt.fmt.pix.width       = config_.frame_width;
-                fmt.fmt.pix.height      = config_.frame_height;
-                fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_JPEG;
+                sensor_name_ = reinterpret_cast<const char*>(cap.card);
+                ESP_LOGI(TAG, "检测到传感器: %s (驱动=%s)", sensor_name_.c_str(), cap.driver);
 
-                if (ioctl(device_fd_, VIDIOC_S_FMT, &fmt) != 0)
+                // 获取当前格式
+                struct v4l2_format format = {};
+                format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                if (ioctl(video_fd_, VIDIOC_G_FMT, &format) != 0)
                 {
-                    ESP_LOGW(TAG, "设置图像格式失败，将使用默认格式");
-                    // 获取实际设置的格式
-                    if (ioctl(device_fd_, VIDIOC_G_FMT, &fmt) != 0)
-                    {
-                        ESP_LOGE(TAG, "获取图像格式失败");
-                        close(device_fd_);
-                        device_fd_ = -1;
-                        esp_video_deinit();
-                        return false;
-                    }
+                    ESP_LOGE(TAG, "VIDIOC_G_FMT 失败: %d", errno);
+                    return false;
                 }
-                ESP_LOGI(TAG, "图像格式设置成功: %dx%d, 像素格式=0x%08X", 
-                         fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.pixelformat);
 
+                current_resolution_.width = format.fmt.pix.width;
+                current_resolution_.height = format.fmt.pix.height;
+
+                // 选择最佳格式
+                sensor_format_ = selectBestFormat();
+                if (sensor_format_ == 0)
+                {
+                    ESP_LOGE(TAG, "未找到支持的像素格式");
+                    return false;
+                }
+
+                // 设置格式
+                struct v4l2_format setformat = {};
+                setformat.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                setformat.fmt.pix.width = current_resolution_.width;
+                setformat.fmt.pix.height = current_resolution_.height;
+                setformat.fmt.pix.pixelformat = sensor_format_;
+
+                if (ioctl(video_fd_, VIDIOC_S_FMT, &setformat) != 0)
+                {
+                    ESP_LOGE(TAG, "VIDIOC_S_FMT 失败: %d", errno);
+                    return false;
+                }
+
+                current_format_ = toPixelFormat(sensor_format_);
+
+                // 打印选择的格式信息
+                const char* format_name = "UNKNOWN";
+                switch (current_format_)
+                {
+                case PixelFormat::RGB565:
+                    format_name = "RGB565";
+                    break;
+                case PixelFormat::RGB24:
+                    format_name = "RGB24";
+                    break;
+                case PixelFormat::YUV422:
+                    format_name = "YUV422";
+                    break;
+                case PixelFormat::YUV420:
+                    format_name = "YUV420";
+                    break;
+                case PixelFormat::JPEG:
+                    format_name = "JPEG";
+                    break;
+                default:
+                    break;
+                }
+                ESP_LOGI(TAG, "选择的格式: %s (0x%08lx)", format_name, sensor_format_);
+
+                // 申请缓冲区
                 struct v4l2_requestbuffers req = {};
-                req.count  = config_.buffer_count;  
-                req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-                req.memory = V4L2_MEMORY_MMAP;  // 内存映射模式
+                req.count = 1;  // DVP 使用 1 个缓冲区
+                req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                req.memory = V4L2_MEMORY_MMAP;
 
-                // 验证缓冲区数量范围
-                if (req.count < 1 || req.count > 4)
+                if (ioctl(video_fd_, VIDIOC_REQBUFS, &req) != 0)
                 {
-                    ESP_LOGW(TAG, "缓冲区数量 %u 超出范围(1-4)，调整为3", req.count);
-                    req.count = 3;
-                }
-
-                if (ioctl(device_fd_, VIDIOC_REQBUFS, &req) != 0)
-                {
-                    ESP_LOGE(TAG, "请求缓冲区失败: errno=%d", errno);
-                    close(device_fd_);
-                    device_fd_ = -1;
-                    esp_video_deinit();
+                    ESP_LOGE(TAG, "VIDIOC_REQBUFS 失败: %d", errno);
                     return false;
                 }
 
-                if (req.count < 1)
-                {
-                    ESP_LOGE(TAG, "请求的缓冲区数量不足: %u", req.count);
-                    close(device_fd_);
-                    device_fd_ = -1;
-                    esp_video_deinit();
-                    return false;
-                }
-
-                buffer_count_ = req.count;
-                ESP_LOGI(TAG, "成功请求 %u 个缓冲区", buffer_count_);
-
-                for (uint32_t i = 0; i < buffer_count_; i++)
+                // mmap 缓冲区
+                mmap_buffers_.resize(req.count);
+                for (uint32_t i = 0; i < req.count; i++)
                 {
                     struct v4l2_buffer buf = {};
-                    buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
                     buf.memory = V4L2_MEMORY_MMAP;
-                    buf.index  = i;
+                    buf.index = i;
 
-                    // 查询缓冲区信息
-                    if (ioctl(device_fd_, VIDIOC_QUERYBUF, &buf) != 0)
+                    if (ioctl(video_fd_, VIDIOC_QUERYBUF, &buf) != 0)
                     {
-                        ESP_LOGE(TAG, "查询缓冲区 %u 失败: errno=%d", i, errno);
-                        cleanupBuffers();
-                        close(device_fd_);
-                        device_fd_ = -1;
-                        esp_video_deinit();
+                        ESP_LOGE(TAG, "VIDIOC_QUERYBUF 失败: %d", errno);
                         return false;
                     }
 
-                    // 使用mmap映射缓冲区到用户空间
-                    buffers_[i] = (uint8_t*)mmap(NULL, buf.length, 
-                                                  PROT_READ | PROT_WRITE, 
-                                                  MAP_SHARED, 
-                                                  device_fd_, 
-                                                  buf.m.offset);
-
-                    if (buffers_[i] == MAP_FAILED)
+                    void* start = mmap(NULL, buf.length, PROT_READ | PROT_WRITE,
+                                       MAP_SHARED, video_fd_, buf.m.offset);
+                    if (start == MAP_FAILED)
                     {
-                        ESP_LOGE(TAG, "映射缓冲区 %u 失败: errno=%d", i, errno);
-                        buffers_[i] = nullptr;
-                        cleanupBuffers();
-                        close(device_fd_);
-                        device_fd_ = -1;
-                        esp_video_deinit();
+                        ESP_LOGE(TAG, "mmap 失败: %d", errno);
                         return false;
                     }
 
-                    buffer_sizes_[i] = buf.length;
-                    ESP_LOGI(TAG, "缓冲区 %u: 地址=%p, 大小=%u 字节", i, buffers_[i], buffer_sizes_[i]);
+                    mmap_buffers_[i].start = start;
+                    mmap_buffers_[i].length = buf.length;
+
+                    // 将缓冲区入队
+                    if (ioctl(video_fd_, VIDIOC_QBUF, &buf) != 0)
+                    {
+                        ESP_LOGE(TAG, "VIDIOC_QBUF 失败: %d", errno);
+                        return false;
+                    }
                 }
 
-                // 将缓冲区加入队列
-                for (uint32_t i = 0; i < buffer_count_; i++)
+                // 启动视频流
+                int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                if (ioctl(video_fd_, VIDIOC_STREAMON, &type) != 0)
+                {
+                    ESP_LOGE(TAG, "VIDIOC_STREAMON 失败: %d", errno);
+                    return false;
+                }
+
+                streaming_on_ = true;
+                ESP_LOGI(TAG, "视频流已启动");
+
+                return true;
+            }
+
+            uint32_t Camera::selectBestFormat()
+            {
+                // 枚举支持的格式，按优先级选择
+                struct v4l2_fmtdesc fmtdesc = {};
+                fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                fmtdesc.index = 0;
+
+                uint32_t best_fmt = 0;
+                int best_rank = 1 << 30;  // 大数字
+
+                // 格式优先级 (数字越小优先级越高)
+                auto get_rank = [](uint32_t fmt) -> int {
+                    switch (fmt)
+                    {
+                    case V4L2_PIX_FMT_YUV422P:  // YUYV
+                        return 10;
+                    case V4L2_PIX_FMT_RGB565:
+                        return 11;
+                    case V4L2_PIX_FMT_RGB24:
+                        return 12;
+                    case V4L2_PIX_FMT_YUV420:
+                        return 13;
+                    case V4L2_PIX_FMT_JPEG:
+                        return 5;
+                    default:
+                        return 1 << 29;  // 不支持
+                    }
+                };
+
+                while (ioctl(video_fd_, VIDIOC_ENUM_FMT, &fmtdesc) == 0)
+                {
+                    int rank = get_rank(fmtdesc.pixelformat);
+                    ESP_LOGD(TAG, "支持格式: 0x%08lx (%s), rank=%d",
+                             fmtdesc.pixelformat, fmtdesc.description, rank);
+
+                    if (rank < best_rank)
+                    {
+                        best_rank = rank;
+                        best_fmt = fmtdesc.pixelformat;
+                    }
+                    fmtdesc.index++;
+                }
+
+                if (best_fmt != 0)
+                {
+                    ESP_LOGI(TAG, "选择格式: 0x%08lx", best_fmt);
+                }
+
+                return best_fmt;
+            }
+
+            bool Camera::capture(FrameBuffer& frame_out, int skip_frames)
+            {
+                if (!initialized_ || !streaming_on_)
+                {
+                    ESP_LOGE(TAG, "摄像头未初始化或流未启动");
+                    return false;
+                }
+
+                // 跳过旧帧，获取最新帧
+                for (int i = 0; i <= skip_frames; i++)
                 {
                     struct v4l2_buffer buf = {};
-                    buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+                    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
                     buf.memory = V4L2_MEMORY_MMAP;
-                    buf.index  = i;
 
-                    if (ioctl(device_fd_, VIDIOC_QBUF, &buf) != 0)
+                    // 出队
+                    if (ioctl(video_fd_, VIDIOC_DQBUF, &buf) != 0)
                     {
-                        ESP_LOGE(TAG, "将缓冲区 %u 加入队列失败: errno=%d", i, errno);
-                        cleanupBuffers();
-                        close(device_fd_);
-                        device_fd_ = -1;
-                        esp_video_deinit();
+                        ESP_LOGE(TAG, "VIDIOC_DQBUF 失败: %d", errno);
                         return false;
                     }
-                }
-                ESP_LOGI(TAG, "所有缓冲区已加入队列");
 
-                initialized_ = true;
-                ESP_LOGI(TAG, "摄像头初始化完成");
-                return true;
-            }
-
-            bool Camera::startStream()
-            {
-                if (!initialized_)
-                {
-                    ESP_LOGE(TAG, "摄像头未初始化，无法启动流");
-                    return false;
-                }
-
-                if (streaming_)
-                {
-                    ESP_LOGW(TAG, "视频流已在运行");
-                    return true;
-                }
-
-                if (device_fd_ < 0)
-                {
-                    ESP_LOGE(TAG, "设备文件描述符无效");
-                    return false;
-                }
-
-                int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-                if (ioctl(device_fd_, VIDIOC_STREAMON, &type) != 0)
-                {
-                    ESP_LOGE(TAG, "启动视频流失败: errno=%d", errno);
-                    return false;
-                }
-
-                streaming_ = true;
-                ESP_LOGI(TAG, "视频流已启动，摄像头可以开始捕获数据");
-                return true;
-            }
-
-            bool Camera::stopStream()
-            {
-                if (!streaming_)
-                {
-                    ESP_LOGW(TAG, "视频流未运行");
-                    return true;
-                }
-
-                if (device_fd_ < 0)
-                {
-                    ESP_LOGE(TAG, "设备文件描述符无效");
-                    streaming_ = false;
-                    return false;
-                }
-
-                int type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-                if (ioctl(device_fd_, VIDIOC_STREAMOFF, &type) != 0)
-                {
-                    ESP_LOGE(TAG, "停止视频流失败: errno=%d", errno);
-                    return false;
-                }
-
-                streaming_ = false;
-                ESP_LOGI(TAG, "视频流已停止");
-                return true;
-            }
-
-            void Camera::cleanupBuffers()
-            {
-                // 取消映射所有缓冲区
-                for (uint32_t i = 0; i < buffer_count_; i++)
-                {
-                    if (buffers_[i] != nullptr)
+                    // 最后一帧：拷贝数据到 PSRAM
+                    if (i == skip_frames)
                     {
-                        munmap(buffers_[i], buffer_sizes_[i]);
-                        buffers_[i] = nullptr;
-                        buffer_sizes_[i] = 0;
+                        size_t frame_size = buf.bytesused;
+                        uint8_t* frame_data = (uint8_t*)heap_caps_malloc(
+                            frame_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+
+                        if (!frame_data)
+                        {
+                            ESP_LOGE(TAG, "分配帧缓冲失败: %u 字节", (unsigned int)frame_size);
+                            ioctl(video_fd_, VIDIOC_QBUF, &buf);  // 归还缓冲
+                            return false;
+                        }
+
+                        // 拷贝数据
+                        memcpy(frame_data, mmap_buffers_[buf.index].start, frame_size);
+
+                        // 填充输出结构
+                        frame_out.data = frame_data;
+                        frame_out.len = frame_size;
+                        frame_out.res = current_resolution_;
+                        frame_out.format = current_format_;
+
+                        ESP_LOGD(TAG, "捕获帧: %ux%u, %u 字节",
+                                 frame_out.res.width, frame_out.res.height, (unsigned int)frame_out.len);
+                    }
+
+                    // 归还缓冲区
+                    if (ioctl(video_fd_, VIDIOC_QBUF, &buf) != 0)
+                    {
+                        ESP_LOGE(TAG, "VIDIOC_QBUF 失败: %d", errno);
                     }
                 }
-                buffer_count_ = 0;
+
+                return true;
+            }
+
+            bool Camera::setHMirror(bool enable)
+            {
+                if (video_fd_ < 0)
+                {
+                    return false;
+                }
+
+                struct v4l2_ext_controls ctrls = {};
+                struct v4l2_ext_control ctrl = {};
+                ctrl.id = V4L2_CID_HFLIP;
+                ctrl.value = enable ? 1 : 0;
+                ctrls.ctrl_class = V4L2_CTRL_CLASS_USER;
+                ctrls.count = 1;
+                ctrls.controls = &ctrl;
+
+                if (ioctl(video_fd_, VIDIOC_S_EXT_CTRLS, &ctrls) != 0)
+                {
+                    ESP_LOGE(TAG, "设置水平镜像失败");
+                    return false;
+                }
+
+                ESP_LOGI(TAG, "水平镜像: %s", enable ? "开启" : "关闭");
+                return true;
+            }
+
+            bool Camera::setVFlip(bool enable)
+            {
+                if (video_fd_ < 0)
+                {
+                    return false;
+                }
+
+                struct v4l2_ext_controls ctrls = {};
+                struct v4l2_ext_control ctrl = {};
+                ctrl.id = V4L2_CID_VFLIP;
+                ctrl.value = enable ? 1 : 0;
+                ctrls.ctrl_class = V4L2_CTRL_CLASS_USER;
+                ctrls.count = 1;
+                ctrls.controls = &ctrl;
+
+                if (ioctl(video_fd_, VIDIOC_S_EXT_CTRLS, &ctrls) != 0)
+                {
+                    ESP_LOGE(TAG, "设置垂直翻转失败");
+                    return false;
+                }
+
+                ESP_LOGI(TAG, "垂直翻转: %s", enable ? "开启" : "关闭");
+                return true;
+            }
+
+            // 格式转换辅助函数
+            PixelFormat Camera::toPixelFormat(uint32_t v4l2_fmt)
+            {
+                switch (v4l2_fmt)
+                {
+                case V4L2_PIX_FMT_RGB565:
+                    return PixelFormat::RGB565;
+                case V4L2_PIX_FMT_RGB24:
+                    return PixelFormat::RGB24;
+                case V4L2_PIX_FMT_YUV422P:
+                case V4L2_PIX_FMT_YUYV:
+                    return PixelFormat::YUV422;
+                case V4L2_PIX_FMT_YUV420:
+                    return PixelFormat::YUV420;
+                case V4L2_PIX_FMT_JPEG:
+                    return PixelFormat::JPEG;
+                default:
+                    return PixelFormat::UNKNOWN;
+                }
+            }
+
+            uint32_t Camera::fromPixelFormat(PixelFormat fmt)
+            {
+                switch (fmt)
+                {
+                case PixelFormat::RGB565:
+                    return V4L2_PIX_FMT_RGB565;
+                case PixelFormat::RGB24:
+                    return V4L2_PIX_FMT_RGB24;
+                case PixelFormat::YUV422:
+                    return V4L2_PIX_FMT_YUV422P;
+                case PixelFormat::YUV420:
+                    return V4L2_PIX_FMT_YUV420;
+                case PixelFormat::JPEG:
+                    return V4L2_PIX_FMT_JPEG;
+                default:
+                    return 0;
+                }
             }
 
         } // namespace camera

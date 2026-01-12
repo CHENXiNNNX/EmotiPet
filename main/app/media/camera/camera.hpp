@@ -1,8 +1,13 @@
 #pragma once
 
 #include <cstdint>
-#include <driver/gpio.h>
 #include <driver/i2c_master.h>
+#include <esp_video_init.h>
+#include <esp_video_device.h>
+#include <linux/videodev2.h>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "config/config.hpp"
 
@@ -13,61 +18,84 @@ namespace app
         namespace camera
         {
             /**
-             * @brief 摄像头配置结构体
+             * @brief 摄像头视频格式
+             */
+            enum class PixelFormat
+            {
+                RGB565,   // 16位RGB格式
+                RGB24,    // 24位RGB格式
+                YUV422,   // YUV422格式
+                YUV420,   // YUV420格式
+                JPEG,     // JPEG压缩格式
+                UNKNOWN
+            };
+
+            /**
+             * @brief 摄像头分辨率
+             */
+            struct Resolution
+            {
+                uint16_t width;
+                uint16_t height;
+
+                Resolution() : width(0), height(0) {}
+                Resolution(uint16_t w, uint16_t h) : width(w), height(h) {}
+            };
+
+            /**
+             * @brief 帧缓冲区结构
+             */
+            struct FrameBuffer
+            {
+                uint8_t*     data;   // 图像数据指针
+                size_t       len;    // 数据长度
+                Resolution   res;    // 分辨率
+                PixelFormat  format; // 像素格式
+
+                FrameBuffer() : data(nullptr), len(0), format(PixelFormat::UNKNOWN) {}
+
+                ~FrameBuffer()
+                {
+                    if (data)
+                    {
+                        free(data);
+                        data = nullptr;
+                    }
+                }
+
+                // 禁止拷贝
+                FrameBuffer(const FrameBuffer&)            = delete;
+                FrameBuffer& operator=(const FrameBuffer&) = delete;
+
+                // 允许移动
+                FrameBuffer(FrameBuffer&& other) noexcept
+                    : data(other.data), len(other.len), res(other.res), format(other.format)
+                {
+                    other.data = nullptr;
+                    other.len  = 0;
+                }
+            };
+
+            /**
+             * @brief 摄像头配置结构
              */
             struct Config
             {
-                i2c_master_bus_handle_t i2c_master_handle; // I2C 主设备句柄
-
-                // DVP 数据线引脚 (8位数据)
-                gpio_num_t dvp_d0;
-                gpio_num_t dvp_d1;
-                gpio_num_t dvp_d2;
-                gpio_num_t dvp_d3;
-                gpio_num_t dvp_d4;
-                gpio_num_t dvp_d5;
-                gpio_num_t dvp_d6;
-                gpio_num_t dvp_d7;
-
-                // DVP 控制信号引脚
-                gpio_num_t dvp_vsync; // 垂直同步
-                gpio_num_t dvp_de;    // 数据使能
-                gpio_num_t dvp_pclk;  // 像素时钟
-                gpio_num_t dvp_xclk;  // 输出时钟
-
-                // 摄像头控制引脚
-                gpio_num_t reset_pin; // 复位引脚
-                gpio_num_t pwdn_pin;  // 电源休眠引脚
-
-                // 时钟频率配置
-                uint32_t xclk_freq; // 输出时钟频率 (Hz)
-                uint32_t sccb_freq; // SCCB(I2C) 频率 (Hz)
-
-                // 图像配置
-                uint32_t frame_width;  // 帧宽度
-                uint32_t frame_height; // 帧高度
-
-                // 缓冲区配置
-                uint32_t buffer_count;  // 缓冲区数量
-                uint32_t buffer_size;  // 单个缓冲区大小（字节），0表示自动计算
+                i2c_master_bus_handle_t i2c_handle;    // I2C 总线句柄
+                uint32_t                xclk_freq;     // 外部时钟频率
+                Resolution              resolution;    // 默认分辨率
+                PixelFormat             pixel_format;  // 默认像素格式
+                bool                    auto_detect;   // 是否自动检测传感器
 
                 Config()
-                    : i2c_master_handle(nullptr), dvp_d0(config::CAM_DVP_D0),
-                      dvp_d1(config::CAM_DVP_D1), dvp_d2(config::CAM_DVP_D2),
-                      dvp_d3(config::CAM_DVP_D3), dvp_d4(config::CAM_DVP_D4),
-                      dvp_d5(config::CAM_DVP_D5), dvp_d6(config::CAM_DVP_D6),
-                      dvp_d7(config::CAM_DVP_D7), dvp_vsync(config::CAM_DVP_VSYNC),
-                      dvp_de(config::CAM_DVP_DE), dvp_pclk(config::CAM_DVP_PCLK),
-                      dvp_xclk(config::CAM_DVP_XCLK), reset_pin(config::CAM_RESET_PIN),
-                      pwdn_pin(config::CAM_PWDN_PIN), xclk_freq(config::CAM_XCLK_FREQ),
-                      sccb_freq(100000), frame_width(1280), frame_height(720),
-                      buffer_count(3), buffer_size(0)  // buffer_size=0表示自动计算
+                    : i2c_handle(nullptr), xclk_freq(config::CAM_XCLK_FREQ),
+                      resolution(240, 240), pixel_format(PixelFormat::RGB565), auto_detect(true)
                 {
                 }
             };
 
             /**
-             * @brief 摄像头类
+             * @brief 摄像头驱动类
              */
             class Camera
             {
@@ -77,20 +105,52 @@ namespace app
 
                 /**
                  * @brief 初始化摄像头
-                 * @param config 摄像头配置参数，如果为 nullptr 则使用默认配置
-                 * @return true 成功，false 失败
+                 * @param config 配置参数
+                 * @return true=成功, false=失败
                  */
                 bool init(const Config* config = nullptr);
 
                 /**
-                 * @brief 反初始化摄像头，释放所有资源
-                 * @return true 成功，false 失败
+                 * @brief 反初始化
                  */
-                bool deinit();
+                void deinit();
 
                 /**
-                 * @brief 检查摄像头是否已初始化
-                 * @return true 已初始化，false 未初始化
+                 * @brief 捕获一帧图像
+                 * @param frame_out 输出帧缓冲区（自动分配内存）
+                 * @param skip_frames 跳过的帧数（默认2，获取最新帧）
+                 * @return true=成功, false=失败
+                 */
+                bool capture(FrameBuffer& frame_out, int skip_frames = 2);
+
+                /**
+                 * @brief 获取当前分辨率
+                 */
+                Resolution getResolution() const
+                {
+                    return current_resolution_;
+                }
+
+                /**
+                 * @brief 获取当前像素格式
+                 */
+                PixelFormat getPixelFormat() const
+                {
+                    return current_format_;
+                }
+
+                /**
+                 * @brief 设置水平镜像
+                 */
+                bool setHMirror(bool enable);
+
+                /**
+                 * @brief 设置垂直翻转
+                 */
+                bool setVFlip(bool enable);
+
+                /**
+                 * @brief 检查是否已初始化
                  */
                 bool isInitialized() const
                 {
@@ -98,50 +158,47 @@ namespace app
                 }
 
                 /**
-                 * @brief 获取视频设备文件描述符
-                 * @return 文件描述符，如果未初始化则返回 -1
+                 * @brief 获取传感器名称
                  */
-                int getDeviceFd() const
+                std::string getSensorName() const
                 {
-                    return device_fd_;
-                }
-
-                /**
-                 * @brief 启动视频流
-                 * @return true 成功，false 失败
-                 * @note 必须在 init() 成功后调用
-                 */
-                bool startStream();
-
-                /**
-                 * @brief 停止视频流
-                 * @return true 成功，false 失败
-                 */
-                bool stopStream();
-
-                /**
-                 * @brief 检查视频流是否正在运行
-                 * @return true 正在运行，false 未运行
-                 */
-                bool isStreaming() const
-                {
-                    return streaming_;
+                    return sensor_name_;
                 }
 
             private:
-                Config config_;           // 摄像头配置
-                bool   initialized_;      // 是否已初始化
-                int    device_fd_;        // 视频设备文件描述符
-                uint8_t* buffers_[4];     // 缓冲区指针数组
-                uint32_t buffer_sizes_[4]; // 缓冲区大小数组
-                uint32_t buffer_count_;   // 实际缓冲区数量
-                bool    streaming_;       // 是否正在流式传输
-                
-                /**
-                 * @brief 清理缓冲区资源
-                 */
-                void cleanupBuffers();
+                // 初始化 DVP 视频设备
+                bool initDvpDevice();
+
+                // 初始化 V4L2 视频设备
+                bool initV4l2Device();
+
+                // 选择最佳像素格式
+                uint32_t selectBestFormat();
+
+                // 像素格式转换
+                static PixelFormat toPixelFormat(uint32_t v4l2_fmt);
+                static uint32_t fromPixelFormat(PixelFormat fmt);
+
+                // 成员变量
+                Config       config_;
+                bool         initialized_;
+                int          video_fd_;           // V4L2 设备文件描述符
+                bool         streaming_on_;       // 流是否已启动
+                std::string  sensor_name_;        // 传感器名称
+
+                Resolution   current_resolution_; // 当前分辨率
+                PixelFormat  current_format_;     // 当前格式
+                uint32_t     sensor_format_;      // 传感器输出格式 (V4L2格式)
+
+                // mmap 缓冲区
+                struct MmapBuffer
+                {
+                    void*  start;
+                    size_t length;
+                };
+                std::vector<MmapBuffer> mmap_buffers_;
             };
+
         } // namespace camera
     } // namespace media
 } // namespace app
