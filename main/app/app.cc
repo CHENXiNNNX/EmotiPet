@@ -7,6 +7,7 @@
 #include "system/task/task.hpp"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "logic/logic.h"
 
 static const char* const TAG = "App";
 
@@ -252,6 +253,10 @@ namespace app
             ESP_LOGW(TAG, "QMI8658A 陀螺仪未初始化，跳过启动");
         }
 
+        // 初始化配置和变量
+        logic_config_t config = init_logic_config();
+        static int zero_streak = 0;
+
         while (true)
         {
             app::sys::task::TaskManager::delayMs(5000); // 5秒间隔
@@ -261,6 +266,11 @@ namespace app
             logMemoryInfo();
             logWiFiInfo();
             logQMI8658AInfo();
+            week(mpr121_.getCurrentTouchStatus(),
+            m0404_.getCurrentPressureStatus(),
+            qmi8658a_.getCurrentMotionStatus(),
+            apds9930_.getCurrentLightStatus(),
+            config, zero_streak, TAG);
             ESP_LOGI(TAG, "==============================================");
         }
     }

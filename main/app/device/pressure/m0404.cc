@@ -417,14 +417,29 @@ namespace app
                         }
 
                         // 只在有压力时输出（不按固定间隔输出）
-                        if (has_pressure && has_change)
+                        // 检查是否有任何传感器的值大于阈值（5）
+                        bool has_above_threshold = false;
+                        for (size_t i = 0; i < PRESSURE_COUNT; i++)
                         {
-                            // 只显示有压力的传感器
+                            if (data.pressures[i] > 5 || (has_last_data && last_pressures[i] > 5))
+                            {
+                                has_above_threshold = true;
+                                break;
+                            }
+                        }
+
+                        if (has_pressure && has_change && has_above_threshold)
+                        {
+                            // 只显示有压力的传感器，且值大于阈值（5）
                             bool has_output = false;
                             for (size_t i = 0; i < PRESSURE_COUNT; i++)
                             {
-                                // 显示：1) 当前值 > 0，或 2) 值有变化
-                                if (data.pressures[i] > 0 || (has_last_data && data.pressures[i] != last_pressures[i]))
+                                // 显示：1) 当前值 > 5，或 2) 值有变化且（当前值或上次值）> 5
+                                bool current_above = data.pressures[i] > 5;
+                                bool last_above = has_last_data && last_pressures[i] > 5;
+                                bool value_changed = has_last_data && data.pressures[i] != last_pressures[i];
+                                
+                                if (current_above || (value_changed && last_above))
                                 {
                                     if (!has_output)
                                     {
@@ -437,7 +452,7 @@ namespace app
                                         ESP_LOGI(TAG, "  传感器[%2lu]: %5u -> %5u", 
                                                  (unsigned long)i, last_pressures[i], data.pressures[i]);
                                     }
-                                    else if (data.pressures[i] > 0)
+                                    else if (data.pressures[i] > 5)
                                     {
                                         ESP_LOGI(TAG, "  传感器[%2lu]: %5u", 
                                                  (unsigned long)i, data.pressures[i]);
