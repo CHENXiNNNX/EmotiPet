@@ -31,6 +31,7 @@ set(SOURCES "app/assets/assets.cc"
             "app/tool/ota/ota.cc"
             "app/tool/time/time.cc"
             "app/tool/uuid/uuid.cc"
+            "app/logic/logic.cc"
             "app/app.cc"
             "main.cc"
             )
@@ -68,6 +69,7 @@ set(INCLUDE_DIRS "app"
                  "app/tool/ota"
                  "app/tool/time"
                  "app/tool/uuid"
+                 "app/logic"
                  )
 
 idf_component_register(SRCS ${SOURCES}

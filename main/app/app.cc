@@ -1,12 +1,15 @@
 #include "app.hpp"
 
 #include "config/config.hpp"
+#include "logic/logic.h"
 #include "network/wifi/wifi.hpp"
 #include "system/event/event.hpp"
 #include "system/info/info.hpp"
 #include "system/task/task.hpp"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include <cstdio>
+#include <cstring>
 
 static const char* const TAG = "App";
 
@@ -252,15 +255,37 @@ namespace app
             ESP_LOGW(TAG, "QMI8658A 陀螺仪未初始化，跳过启动");
         }
 
+        // 初始化配置和变量
+        logic_config_t config = init_logic_config();
+        static int zero_streak = 0;
+        // char line[64];
+        // char cmd[16];
+        // int  a, b, c, d;
+
         while (true)
         {
-            app::sys::task::TaskManager::delayMs(5000); // 5秒间隔
+            // 读取串口输入
+            // if (fgets(line, sizeof(line), stdin) != nullptr &&
+            //     sscanf(line, "%15s %d %d %d %d", cmd, &a, &b, &c, &d) == 5 &&
+            //     strcmp(cmd, "week") == 0)
+            // {
+                
+            //     // int control = week(a, b, c, d, config, zero_streak, TAG);
+            //     // ESP_LOGI(TAG, "control: %d", control);
+            // }
 
-            // 打印系统信息
+            app::sys::task::TaskManager::delayMs(5000); // 5秒间隔
             ESP_LOGI(TAG, "================= 系统信息 ===================");
             logMemoryInfo();
             logWiFiInfo();
             logQMI8658AInfo();
+            week(device::mpr121::MPR121::GetCurrentTouchStatus(),
+            device::pressure::M0404::GetCurrentPressureStatus(),
+            qmi8658a_.getCurrentMotionStatus(),
+            device::apds9930::APDS9930::GetCurrentLightStatus(),
+            config, zero_streak, TAG);
+            // week(0,0,qmi8658a_.getCurrentMotionStatus(),0,config, zero_streak, TAG);
+            // 打印系统信息
             ESP_LOGI(TAG, "==============================================");
         }
     }

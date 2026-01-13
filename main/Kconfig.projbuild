@@ -13,7 +13,7 @@ menu "EmotiPet Assets 配置"
             default "mn6_cn mn6_en"
             help
                 要包含在 assets.bin 中的 Multinet 模型名称列表（空格分隔）。
-                示例: "mn6_cn mn6_en" 或 "mn7_cn mn7_en"
+                示例: "mn6_cn mn6_en" 或 "mn7_cn mn7_en"    
                 可用模型: mn6_cn, mn6_en, mn7_cn, mn7_en 等
 
         config ASSETS_CN_WAKE_WORD
