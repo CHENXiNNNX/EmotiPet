@@ -47,42 +47,26 @@ namespace app
             // 不返回 false，允许其他功能继续
         }
 
-        // 初始化 APDS-9930 传感器
-        i2c_master_bus_handle_t i2c_handle = getI2CBusHandle();
-        if (i2c_handle != nullptr)
+        // 初始化 APDS-9930 传感器（可选，未连接时不退出）
+        if (!initAPDS9930(getI2CBusHandle()))
         {
-            if (!device::apds9930::APDS9930::Init(i2c_handle, device::apds9930::APDS9930_I2C_ADDR))
-            {
-                ESP_LOGW(TAG, "APDS-9930 初始化失败");
-                // 不返回 false，允许其他功能继续
-            }
-            else
-            {
-                ESP_LOGI(TAG, "APDS-9930 初始化成功");
-            }
-        }
-
-        // 初始化 MPR121 触摸传感器
-        i2c_handle = getI2CBusHandle();
-        if (i2c_handle != nullptr)
-        {
-            if (!initMPR121(i2c_handle))
-            {
-                ESP_LOGW(TAG, "MPR121 触摸传感器初始化失败");
-                // 不返回 false，允许其他功能继续
-            }
-        }
-
-        // 初始化 M0404 压力传感器（UART2）
-        // 传感器TX -> ESP32 RX (GPIO15), 传感器RX -> ESP32 TX (GPIO7)
-        if (!device::pressure::M0404::Init(UART_NUM_2, GPIO_NUM_7, GPIO_NUM_15, 115200))
-        {
-            ESP_LOGW(TAG, "M0404 压力传感器初始化失败");
+            ESP_LOGW(TAG, "APDS-9930 初始化失败（可能未连接）");
             // 不返回 false，允许其他功能继续
         }
-        else
+
+        // 初始化 MPR121 触摸传感器（可选，未连接时不退出）
+        if (!initMPR121(getI2CBusHandle()))
         {
-            ESP_LOGI(TAG, "M0404 压力传感器初始化成功");
+            ESP_LOGW(TAG, "MPR121 触摸传感器初始化失败（可能未连接）");
+            // 不返回 false，允许其他功能继续
+        }
+
+        // 初始化 M0404 压力传感器（可选，未连接时不退出）
+        // 传感器TX -> ESP32 RX (GPIO15), 传感器RX -> ESP32 TX (GPIO7)
+        if (!initM0404(UART_NUM_2, GPIO_NUM_7, GPIO_NUM_15, 115200))
+        {
+            ESP_LOGW(TAG, "M0404 压力传感器初始化失败（可能未连接）");
+            // 不返回 false，允许其他功能继续
         }
 
         if (!initProvision())
@@ -131,26 +115,26 @@ namespace app
         }
 
         // 启动 APDS-9930 传感器数据获取（非阻塞）
-        if (device::apds9930::APDS9930::getInstance().isInitialized())
+        if (apds9930_.isInitialized())
         {
             // 设置环境光状态回调函数
             // 当环境光 >= 1500 lux 时，light_status = 1（亮）
             // 当环境光 < 1500 lux 时，light_status = 0（灭）
-            device::apds9930::APDS9930::SetLightStatusCallback(
+            apds9930_.setLightStatusCallback(
                 [](int light_status)
                 {
                     const char* status_str = (light_status == 1) ? "亮" : "灭";
                     ESP_LOGI(TAG, "环境光状态回调: %d (%s)", light_status, status_str);
                     // 通过以下方式获取当前光状态：
-                    // int status = device::apds9930::APDS9930::GetCurrentLightStatus();
+                    // int status = apds9930_.getCurrentLightStatus();
                 });
 
             // 启动传感器数据获取
-            if (device::apds9930::APDS9930::Start())
+            if (apds9930_.start())
             {
                 ESP_LOGI(TAG, "APDS-9930 传感器数据获取已开启");
                 // 启动后台数据采集任务（每5秒采集一次）
-                if (device::apds9930::APDS9930::StartDataCollection(5000))
+                if (apds9930_.startDataCollection(5000))
                 {
                     ESP_LOGI(TAG, "APDS-9930 数据采集任务已启动");
                 }
@@ -170,12 +154,12 @@ namespace app
         }
 
         // 启动 M0404 压力传感器数据采集（非阻塞）
-        if (device::pressure::M0404::getInstance().isInitialized())
+        if (m0404_.isInitialized())
         {
             // 设置压力状态回调函数
             // 当有压力时，pressure_status = 1（有压力）
             // 当无压力时，pressure_status = 0（无压力）
-            device::pressure::M0404::SetPressureStatusCallback(
+            m0404_.setPressureStatusCallback(
                 [](int pressure_status)
                 {
                     // 只在有压力时才输出日志
@@ -184,11 +168,11 @@ namespace app
                         ESP_LOGI(TAG, "压力状态回调: %d (有压力)", pressure_status);
                     }
                     // 通过以下方式获取当前压力状态：
-                    // int status = device::pressure::M0404::GetCurrentPressureStatus();
+                    // int status = m0404_.getCurrentPressureStatus();
                 });
 
             // 启动后台数据采集任务（每10秒采集一次）
-            if (device::pressure::M0404::StartDataCollection(10000))
+            if (m0404_.startDataCollection(10000))
             {
                 ESP_LOGI(TAG, "M0404 压力传感器数据采集任务已启动");
             }
@@ -203,12 +187,12 @@ namespace app
         }
 
         // 启动 MPR121 触摸传感器数据采集（非阻塞）
-        if (device::mpr121::MPR121::getInstance().isInitialized())
+        if (mpr121_.isInitialized())
         {
             // 设置触摸状态回调函数
             // 当有触摸时，touch_status = 1（触摸）
             // 当未触摸时，touch_status = 0（未触摸）
-            device::mpr121::MPR121::SetTouchStatusCallback(
+            mpr121_.setTouchStatusCallback(
                 [](int touch_status)
                 {
                     // 只在触摸时才输出日志
@@ -217,11 +201,11 @@ namespace app
                         ESP_LOGI(TAG, "触摸状态回调: %d (触摸)", touch_status);
                     }
                     // 通过以下方式获取当前触摸状态：
-                    // int status = device::mpr121::MPR121::GetCurrentTouchStatus();
+                    // int status = mpr121_.getCurrentTouchStatus();
                 });
 
             // 启动后台数据采集任务（每100ms采集一次）
-            if (device::mpr121::MPR121::StartDataCollection(100))
+            if (mpr121_.startDataCollection(100))
             {
                 ESP_LOGI(TAG, "MPR121 触摸传感器数据采集任务已启动");
             }
@@ -394,6 +378,21 @@ namespace app
         return audio_;
     }
 
+    bool App::initAPDS9930(i2c_master_bus_handle_t i2c_handle)
+    {
+        if (!i2c_handle)
+        {
+            ESP_LOGE(TAG, "I2C 句柄无效");
+            return false;
+        }
+        if (!apds9930_.init(i2c_handle, device::apds9930::APDS9930_I2C_ADDR))
+        {
+            ESP_LOGE(TAG, "APDS-9930 初始化失败");
+            return false;
+        }
+        return true;
+    }
+
     bool App::initMPR121(i2c_master_bus_handle_t i2c_handle)
     {
         if (i2c_handle == nullptr)
@@ -403,7 +402,7 @@ namespace app
         }
 
         // 使用默认 I2C 地址 0x5A，IRQ 引脚不使用（GPIO_NUM_NC）
-        if (!device::mpr121::MPR121::Init(i2c_handle, device::mpr121::MPR121_I2C_ADDR, GPIO_NUM_NC))
+        if (!mpr121_.init(i2c_handle, device::mpr121::MPR121_I2C_ADDR, GPIO_NUM_NC))
         {
             ESP_LOGE(TAG, "MPR121 初始化失败");
             return false;
@@ -415,7 +414,17 @@ namespace app
 
     bool App::isMPR121Initialized() const
     {
-        return device::mpr121::MPR121::getInstance().isInitialized();
+        return mpr121_.isInitialized();
+    }
+
+    bool App::initM0404(uart_port_t uart_num, gpio_num_t tx_pin, gpio_num_t rx_pin, int baud_rate)
+    {
+        if (!m0404_.init(uart_num, tx_pin, rx_pin, baud_rate))
+        {
+            ESP_LOGE(TAG, "M0404 初始化失败");
+            return false;
+        }
+        return true;
     }
 
     bool App::initProvision()

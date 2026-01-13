@@ -15,7 +15,11 @@ namespace app
     class App
     {
     public:
-        App()  = default;
+        App() : apds9930_(device::apds9930::APDS9930::getInstance()),
+                mpr121_(device::mpr121::MPR121::getInstance()),
+                m0404_(device::pressure::M0404::getInstance())
+        {
+        }
         ~App() = default;
 
         bool setup();
@@ -47,6 +51,9 @@ namespace app
 
         // 获取 MPR121 是否已初始化
         bool isMPR121Initialized() const;
+
+        // 初始化 M0404 压力传感器
+        bool initM0404(uart_port_t uart_num, gpio_num_t tx_pin, gpio_num_t rx_pin, int baud_rate = 115200);
 
     private:
         // 初始化 NVS
@@ -89,6 +96,9 @@ namespace app
         i2c::I2c                   i2c_;
         device::qmi8658a::Qmi8658a qmi8658a_;
         media::audio::Audio        audio_;
+        device::apds9930::APDS9930& apds9930_;
+        device::mpr121::MPR121&      mpr121_;
+        device::pressure::M0404&     m0404_;
     };
 
 } // namespace app
