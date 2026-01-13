@@ -33,16 +33,56 @@ namespace app
             return false;
         }
 
+        // 初始化 QMI8658A 陀螺仪（可选，未连接时不退出）
         if (!initQMI8658A(getI2CBusHandle()))
         {
-            ESP_LOGE(TAG, "QMI8658A 初始化失败");
-            return false;
+            ESP_LOGW(TAG, "QMI8658A 初始化失败（可能未连接）");
+            // 不返回 false，允许其他功能继续
         }
 
+        // 初始化 Audio（可选，失败时不退出）
         if (!initAudio(getI2CBusHandle(), 16000))
         {
-            ESP_LOGE(TAG, "Audio 初始化失败");
-            return false;
+            ESP_LOGW(TAG, "Audio 初始化失败");
+            // 不返回 false，允许其他功能继续
+        }
+
+        // 初始化 APDS-9930 传感器
+        i2c_master_bus_handle_t i2c_handle = getI2CBusHandle();
+        if (i2c_handle != nullptr)
+        {
+            if (!device::apds9930::APDS9930::Init(i2c_handle, device::apds9930::APDS9930_I2C_ADDR))
+            {
+                ESP_LOGW(TAG, "APDS-9930 初始化失败");
+                // 不返回 false，允许其他功能继续
+            }
+            else
+            {
+                ESP_LOGI(TAG, "APDS-9930 初始化成功");
+            }
+        }
+
+        // 初始化 MPR121 触摸传感器
+        i2c_handle = getI2CBusHandle();
+        if (i2c_handle != nullptr)
+        {
+            if (!initMPR121(i2c_handle))
+            {
+                ESP_LOGW(TAG, "MPR121 触摸传感器初始化失败");
+                // 不返回 false，允许其他功能继续
+            }
+        }
+
+        // 初始化 M0404 压力传感器（UART2）
+        // 传感器TX -> ESP32 RX (GPIO15), 传感器RX -> ESP32 TX (GPIO7)
+        if (!device::pressure::M0404::Init(UART_NUM_2, GPIO_NUM_7, GPIO_NUM_15, 115200))
+        {
+            ESP_LOGW(TAG, "M0404 压力传感器初始化失败");
+            // 不返回 false，允许其他功能继续
+        }
+        else
+        {
+            ESP_LOGI(TAG, "M0404 压力传感器初始化成功");
         }
 
         if (!initProvision())
@@ -61,7 +101,6 @@ namespace app
         auto& wifi      = app::network::wifi::WiFiManager::getInstance();
 
         // wifi.removeCredentials("yf");
-
         if (!wifi.hasSavedCredentials())
         {
             ESP_LOGE(TAG, "没有保存的 WiFi 凭证");
@@ -89,6 +128,144 @@ namespace app
                     return;
                 }
             }
+        }
+
+        // 启动 APDS-9930 传感器数据获取（非阻塞）
+        if (device::apds9930::APDS9930::getInstance().isInitialized())
+        {
+            // 设置环境光状态回调函数
+            // 当环境光 >= 1500 lux 时，light_status = 1（亮）
+            // 当环境光 < 1500 lux 时，light_status = 0（灭）
+            device::apds9930::APDS9930::SetLightStatusCallback(
+                [](int light_status)
+                {
+                    const char* status_str = (light_status == 1) ? "亮" : "灭";
+                    ESP_LOGI(TAG, "环境光状态回调: %d (%s)", light_status, status_str);
+                    // 通过以下方式获取当前光状态：
+                    // int status = device::apds9930::APDS9930::GetCurrentLightStatus();
+                });
+
+            // 启动传感器数据获取
+            if (device::apds9930::APDS9930::Start())
+            {
+                ESP_LOGI(TAG, "APDS-9930 传感器数据获取已开启");
+                // 启动后台数据采集任务（每5秒采集一次）
+                if (device::apds9930::APDS9930::StartDataCollection(5000))
+                {
+                    ESP_LOGI(TAG, "APDS-9930 数据采集任务已启动");
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "APDS-9930 数据采集任务启动失败");
+                }
+            }
+            else
+            {
+                ESP_LOGW(TAG, "APDS-9930 启动失败");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "APDS-9930 未初始化，跳过启动");
+        }
+
+        // 启动 M0404 压力传感器数据采集（非阻塞）
+        if (device::pressure::M0404::getInstance().isInitialized())
+        {
+            // 设置压力状态回调函数
+            // 当有压力时，pressure_status = 1（有压力）
+            // 当无压力时，pressure_status = 0（无压力）
+            device::pressure::M0404::SetPressureStatusCallback(
+                [](int pressure_status)
+                {
+                    // 只在有压力时才输出日志
+                    if (pressure_status == 1)
+                    {
+                        ESP_LOGI(TAG, "压力状态回调: %d (有压力)", pressure_status);
+                    }
+                    // 通过以下方式获取当前压力状态：
+                    // int status = device::pressure::M0404::GetCurrentPressureStatus();
+                });
+
+            // 启动后台数据采集任务（每10秒采集一次）
+            if (device::pressure::M0404::StartDataCollection(10000))
+            {
+                ESP_LOGI(TAG, "M0404 压力传感器数据采集任务已启动");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "M0404 压力传感器数据采集任务启动失败");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "M0404 压力传感器未初始化，跳过启动");
+        }
+
+        // 启动 MPR121 触摸传感器数据采集（非阻塞）
+        if (device::mpr121::MPR121::getInstance().isInitialized())
+        {
+            // 设置触摸状态回调函数
+            // 当有触摸时，touch_status = 1（触摸）
+            // 当未触摸时，touch_status = 0（未触摸）
+            device::mpr121::MPR121::SetTouchStatusCallback(
+                [](int touch_status)
+                {
+                    // 只在触摸时才输出日志
+                    if (touch_status == 1)
+                    {
+                        ESP_LOGI(TAG, "触摸状态回调: %d (触摸)", touch_status);
+                    }
+                    // 通过以下方式获取当前触摸状态：
+                    // int status = device::mpr121::MPR121::GetCurrentTouchStatus();
+                });
+
+            // 启动后台数据采集任务（每100ms采集一次）
+            if (device::mpr121::MPR121::StartDataCollection(100))
+            {
+                ESP_LOGI(TAG, "MPR121 触摸传感器数据采集任务已启动");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "MPR121 触摸传感器数据采集任务启动失败");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "MPR121 触摸传感器未初始化，跳过启动");
+        }
+
+        // 启动 QMI8658A 陀螺仪数据采集（非阻塞）
+        if (qmi8658a_.isInitialized())
+        {
+            // 设置运动状态回调函数
+            // 当加速度变化很大时，motion_status = 1（动了）
+            // 当加速度没变化时，motion_status = 0（没动）
+            qmi8658a_.setMotionStatusCallback(
+                [this](int motion_status)
+                {
+                    // 只在"动了"时才输出日志
+                    if (motion_status == 1)
+                    {
+                        ESP_LOGI(TAG, "运动状态回调: %d (动了)", motion_status);
+                    }
+                    // 通过以下方式获取当前运动状态：
+                    // int status = qmi8658a_.getCurrentMotionStatus();
+                });
+
+            // 启动后台数据采集任务（每100ms采集一次）
+            if (qmi8658a_.startDataCollection(100))
+            {
+                ESP_LOGI(TAG, "QMI8658A 陀螺仪数据采集任务已启动");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "QMI8658A 陀螺仪数据采集任务启动失败");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "QMI8658A 陀螺仪未初始化，跳过启动");
         }
 
         while (true)
@@ -169,7 +346,7 @@ namespace app
             ESP_LOGE(TAG, "I2C 句柄无效");
             return false;
         }
-        if (!qmi8658a_.init(i2c_handle, common::i2c::qmi8658a::QMI8658A_ADDR_LOW))
+        if (!qmi8658a_.init(i2c_handle, device::qmi8658a::QMI8658A_ADDR_LOW))
         {
             ESP_LOGE(TAG, "QMI8658A 初始化失败");
             return false;
@@ -177,7 +354,7 @@ namespace app
         return true;
     }
 
-    common::i2c::qmi8658a::Qmi8658a& App::getQMI8658A()
+    device::qmi8658a::Qmi8658a& App::getQMI8658A()
     {
         return qmi8658a_;
     }
@@ -215,6 +392,30 @@ namespace app
     media::audio::Audio& App::getAudio()
     {
         return audio_;
+    }
+
+    bool App::initMPR121(i2c_master_bus_handle_t i2c_handle)
+    {
+        if (i2c_handle == nullptr)
+        {
+            ESP_LOGE(TAG, "I2C 总线句柄为空");
+            return false;
+        }
+
+        // 使用默认 I2C 地址 0x5A，IRQ 引脚不使用（GPIO_NUM_NC）
+        if (!device::mpr121::MPR121::Init(i2c_handle, device::mpr121::MPR121_I2C_ADDR, GPIO_NUM_NC))
+        {
+            ESP_LOGE(TAG, "MPR121 初始化失败");
+            return false;
+        }
+
+        ESP_LOGI(TAG, "MPR121 初始化成功");
+        return true;
+    }
+
+    bool App::isMPR121Initialized() const
+    {
+        return device::mpr121::MPR121::getInstance().isInitialized();
     }
 
     bool App::initProvision()
@@ -301,9 +502,9 @@ namespace app
 
     void App::logQMI8658AInfo()
     {
-        common::i2c::qmi8658a::SensorData data;
+        device::qmi8658a::SensorData data;
         // 读取传感器数据并计算姿态角
-        if (qmi8658a_.read(data, common::i2c::qmi8658a::READ_ALL))
+        if (qmi8658a_.read(data, device::qmi8658a::READ_ALL))
         {
             ESP_LOGI(TAG, "QMI8658A 加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", data.accel_x,
                      data.accel_y, data.accel_z);

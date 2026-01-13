@@ -11,3 +11,6 @@ dependencies:
   espressif/esp_audio_codec: ^2.4.0
   waveshare/qmi8658: ^1.0.1
   espressif/esp_video: ^1.4.1
+  nopnop2002/mpr121:
+    path: components/mpr121
+    git: https://github.com/nopnop2002/esp-idf-mpr121.git

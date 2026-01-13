@@ -125,13 +125,13 @@ namespace app
                 }
                 audio_codec_i2c_cfg_t i2c_cfg = {
                     .port       = (i2c_port_t)1,
-                    .addr       = config_.es8389_addr,
+                    .addr       = config_.es8311_addr,
                     .bus_handle = config_.i2c_master_handle,
                 };
                 out_ctrl_if_ = audio_codec_new_i2c_ctrl(&i2c_cfg);
                 if (out_ctrl_if_ == nullptr)
                 {
-                    ESP_LOGE(TAG, "创建 ES8389 I2C control interface 失败");
+                    ESP_LOGE(TAG, "创建 ES8311 I2C control interface 失败");
                     return false;
                 }
 
@@ -142,18 +142,18 @@ namespace app
                     return false;
                 }
 
-                es8389_codec_cfg_t es8389_cfg        = {};
-                es8389_cfg.ctrl_if                   = out_ctrl_if_;
-                es8389_cfg.gpio_if                   = gpio_if_;
-                es8389_cfg.codec_mode                = ESP_CODEC_DEV_WORK_MODE_DAC;
-                es8389_cfg.pa_pin                    = config_.pa_pin;
-                es8389_cfg.use_mclk                  = true;
-                es8389_cfg.hw_gain.pa_voltage        = 5.0;
-                es8389_cfg.hw_gain.codec_dac_voltage = 3.3;
-                out_codec_if_                        = es8389_codec_new(&es8389_cfg);
+                es8311_codec_cfg_t es8311_cfg        = {};
+                es8311_cfg.ctrl_if                   = out_ctrl_if_;
+                es8311_cfg.gpio_if                   = gpio_if_;
+                es8311_cfg.codec_mode                = ESP_CODEC_DEV_WORK_MODE_DAC;
+                es8311_cfg.pa_pin                    = config_.pa_pin;
+                es8311_cfg.use_mclk                  = true;
+                es8311_cfg.hw_gain.pa_voltage        = 5.0;
+                es8311_cfg.hw_gain.codec_dac_voltage = 3.3;
+                out_codec_if_                        = es8311_codec_new(&es8311_cfg);
                 if (out_codec_if_ == nullptr)
                 {
-                    ESP_LOGE(TAG, "创建 ES8389 codec interface 失败");
+                    ESP_LOGE(TAG, "创建 ES8311 codec interface 失败");
                     return false;
                 }
 

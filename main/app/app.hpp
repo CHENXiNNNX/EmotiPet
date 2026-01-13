@@ -2,7 +2,10 @@
 
 #include "assets/assets.hpp"
 #include "common/i2c/i2c.hpp"
-#include "common/i2c/qmi8658a/qmi8658a.hpp"
+#include "device/qmi8658a/qmi8658a.hpp"
+#include "device/APDS-9930/apds9930.hpp"
+#include "device/mpr121/mpr121.hpp"
+#include "device/pressure/m0404.hpp"
 #include "media/audio/audio.hpp"
 #include "network/network.hpp"
 #include <string>
@@ -22,10 +25,28 @@ namespace app
         i2c_master_bus_handle_t getI2CBusHandle() const;
 
         // 获取 QMI8658A 实例
-        common::i2c::qmi8658a::Qmi8658a& getQMI8658A();
+        device::qmi8658a::Qmi8658a& getQMI8658A();
 
         // 获取 Audio 实例
         media::audio::Audio& getAudio();
+
+        // 初始化 APDS-9930
+        bool initAPDS9930(i2c_master_bus_handle_t i2c_handle);
+
+        // 获取 APDS-9930 实例
+        device::apds9930::APDS9930& getAPDS9930();
+
+        // 开启 APDS-9930 传感器数据获取
+        bool startAPDS9930(bool light_interrupts = false, bool proximity_interrupts = false);
+
+        // 关闭 APDS-9930 传感器数据获取
+        bool stopAPDS9930();
+
+        // 初始化 MPR121 触摸传感器
+        bool initMPR121(i2c_master_bus_handle_t i2c_handle);
+
+        // 获取 MPR121 是否已初始化
+        bool isMPR121Initialized() const;
 
     private:
         // 初始化 NVS
@@ -65,9 +86,9 @@ namespace app
         void logQMI8658AInfo();
 
         // 成员变量
-        common::i2c::I2c                i2c_;
-        common::i2c::qmi8658a::Qmi8658a qmi8658a_;
-        media::audio::Audio             audio_;
+        common::i2c::I2c                 i2c_;
+        device::qmi8658a::Qmi8658a qmi8658a_;
+        media::audio::Audio              audio_;
     };
 
 } // namespace app

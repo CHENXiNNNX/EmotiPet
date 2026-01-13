@@ -1,5 +1,5 @@
 #include "common/i2c/i2c.hpp"
-#include "common/i2c/qmi8658a/qmi8658a.hpp"
+#include "device/qmi8658a/qmi8658a.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,7 +7,7 @@
 static const char* const TAG = "Main";
 
 using namespace app::common::i2c;
-using namespace app::common::i2c::qmi8658a;
+using namespace app::device::qmi8658a;
 
 extern "C" void app_main(void)
 {
@@ -21,7 +21,7 @@ extern "C" void app_main(void)
     }
 
     Qmi8658a                           imu;
-    app::common::i2c::qmi8658a::Config cfg;
+    app::device::qmi8658a::Config cfg;
     cfg.i2c_addr    = QMI8658A_ADDR_LOW;
     cfg.accel_range = AccelRange::RANGE_8G;
     cfg.gyro_range  = GyroRange::RANGE_512DPS;
