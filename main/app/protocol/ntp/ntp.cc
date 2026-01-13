@@ -42,6 +42,14 @@ namespace app
                 return true;
             }
 
+            NTPManager::~NTPManager()
+            {
+                if (initialized_)
+                {
+                    deinit();
+                }
+            }
+
             void NTPManager::deinit()
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -251,5 +259,5 @@ namespace app
             }
 
         } // namespace ntp
-    }     // namespace protocol
+    } // namespace protocol
 } // namespace app

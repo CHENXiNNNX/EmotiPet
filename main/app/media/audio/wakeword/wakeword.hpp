@@ -118,6 +118,6 @@ namespace app
                 };
 
             } // namespace wakeword
-        }     // namespace audio
-    }         // namespace media
+        } // namespace audio
+    } // namespace media
 } // namespace app

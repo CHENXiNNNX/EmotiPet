@@ -37,6 +37,14 @@ namespace app
                 return true;
             }
 
+            HttpClient::~HttpClient()
+            {
+                if (initialized_)
+                {
+                    deinit();
+                }
+            }
+
             void HttpClient::deinit()
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -361,5 +369,5 @@ namespace app
             }
 
         } // namespace http
-    }     // namespace protocol
+    } // namespace protocol
 } // namespace app

@@ -138,7 +138,7 @@ namespace app
 
             private:
                 EventManager();
-                ~EventManager()                              = default;
+                ~EventManager();
                 EventManager(const EventManager&)            = delete;
                 EventManager& operator=(const EventManager&) = delete;
 
@@ -150,5 +150,5 @@ namespace app
             };
 
         } // namespace event
-    }     // namespace sys
+    } // namespace sys
 } // namespace app

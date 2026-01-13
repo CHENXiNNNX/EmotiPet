@@ -13,44 +13,46 @@ namespace app
         {
 
             MemoryPool::MemoryPool(size_t initial_size, size_t alignment, double expansion_factor)
-                : mutex_(xSemaphoreCreateMutex()), alignment_(alignment),
+                : mutex_(MutexRAII::create()), alignment_(alignment),
                   expansion_factor_(expansion_factor)
             {
-                if (mutex_ == nullptr)
+                // 如果互斥锁创建失败，使用默认对齐方式并返回
+                if (!mutex_.isValid())
                 {
                     alignment_ = alignof(std::max_align_t);
                     return;
                 }
 
+                // 验证并修正对齐参数（必须是 2 的幂）
                 if (alignment_ == 0 || (alignment_ & (alignment_ - 1)) != 0)
                 {
                     alignment_ = alignof(std::max_align_t);
                 }
 
+                // 验证并修正扩展因子（必须 >= 1.0）
                 if (expansion_factor_ < 1.0)
                 {
                     expansion_factor_ = 1.0;
                 }
 
-                initializePool(initial_size);
+                // 初始化内存池
+                initPool(initial_size);
             }
 
             MemoryPool::~MemoryPool()
             {
+                // 清理所有资源
                 reset();
-                if (mutex_ != nullptr)
-                {
-                    vSemaphoreDelete(mutex_);
-                    mutex_ = nullptr;
-                }
+                // mutex_ 会在析构函数中自动删除
             }
 
-            void MemoryPool::initializePool(size_t size)
+            void MemoryPool::initPool(size_t size)
             {
                 size_t aligned_size_value = alignedSize(size);
                 size_t header_size        = getHeaderSize();
                 size_t total_size         = aligned_size_value + alignment_;
 
+                // 优先从内部 SRAM 分配，失败则使用默认堆
                 uint8_t* memory = static_cast<uint8_t*>(
                     heap_caps_malloc(total_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
                 if (memory == nullptr)
@@ -59,19 +61,23 @@ namespace app
                         static_cast<uint8_t*>(heap_caps_malloc(total_size, MALLOC_CAP_DEFAULT));
                 }
 
+                // 如果分配失败，直接返回
                 if (memory == nullptr)
                 {
                     return;
                 }
 
+                // 计算对齐后的内存地址
                 uintptr_t memory_addr    = reinterpret_cast<uintptr_t>(memory);
                 size_t    offset         = (alignment_ - (memory_addr % alignment_)) % alignment_;
                 uint8_t*  aligned_memory = memory + offset;
 
+                // 创建内存池块，使用智能指针管理内存）
                 PoolBlock pool_block;
                 pool_block.memory = std::unique_ptr<uint8_t[], EspHeapDeleter>(memory);
                 pool_block.size   = aligned_size_value;
 
+                // 初始化第一个块头
                 auto* first_block    = reinterpret_cast<BlockHeader*>(aligned_memory);
                 first_block->size    = aligned_size_value - header_size;
                 first_block->is_free = true;
@@ -81,6 +87,7 @@ namespace app
                 pool_block.first_block = first_block;
                 pool_blocks_.push_back(std::move(pool_block));
 
+                // 将第一个块添加到空闲块列表
                 void* first_block_ptr = reinterpret_cast<uint8_t*>(first_block) + header_size;
                 auto  it = free_blocks_by_size_.insert({first_block->size, first_block_ptr});
                 free_blocks_iterators_[first_block_ptr] = it;
@@ -88,12 +95,15 @@ namespace app
 
             void* MemoryPool::allocate(size_t size)
             {
-                if (size == 0 || mutex_ == nullptr)
+                // 参数验证
+                if (size == 0 || !mutex_.isValid())
                 {
                     return nullptr;
                 }
 
-                if (xSemaphoreTake(mutex_, portMAX_DELAY) != pdTRUE)
+                // 使用 RAII 锁守卫，自动管理互斥锁
+                MutexLockGuard lock(mutex_.get());
+                if (!lock.isLocked())
                 {
                     return nullptr;
                 }
@@ -103,6 +113,7 @@ namespace app
                 BlockHeader* block                = nullptr;
                 void*        found_ptr            = nullptr;
 
+                // 尝试从空闲块列表中找到合适大小的块
                 auto it = free_blocks_by_size_.lower_bound(aligned_request_size);
                 if (it != free_blocks_by_size_.end())
                 {
@@ -118,6 +129,7 @@ namespace app
                     free_blocks_iterators_.erase(found_ptr);
                 }
 
+                // 如果没有找到合适的块，尝试扩展内存池
                 if (!block)
                 {
                     expandPool(aligned_request_size);
@@ -125,8 +137,7 @@ namespace app
                     block      = pool_blocks_[pool_index].first_block;
                     if (!block || !block->is_free || block->size < aligned_request_size)
                     {
-                        xSemaphoreGive(mutex_);
-                        return nullptr;
+                        return nullptr; // lock 会在返回时自动释放
                     }
 
                     void* block_ptr = reinterpret_cast<uint8_t*>(block) + getHeaderSize();
@@ -138,90 +149,106 @@ namespace app
                     }
                 }
 
+                // 分割块（如果可能）
                 splitBlock(block, aligned_request_size);
                 block->is_free = false;
 
+                // 记录分配的块
                 auto* user_data         = reinterpret_cast<uint8_t*>(block) + getHeaderSize();
                 pointer_map_[user_data] = pool_index;
 
-                xSemaphoreGive(mutex_);
+                // lock 会在返回时自动释放
                 return user_data;
             }
 
             void MemoryPool::deallocate(void* ptr)
             {
-                if (!ptr || mutex_ == nullptr)
+                // 参数验证
+                if (!ptr || !mutex_.isValid())
                 {
                     return;
                 }
 
-                if (xSemaphoreTake(mutex_, portMAX_DELAY) != pdTRUE)
+                // 使用 RAII 锁守卫
+                MutexLockGuard lock(mutex_.get());
+                if (!lock.isLocked())
                 {
                     return;
                 }
 
+                // 查找指针对应的块
                 auto pointer_iter = pointer_map_.find(ptr);
                 if (pointer_iter == pointer_map_.end())
                 {
-                    xSemaphoreGive(mutex_);
-                    return;
+                    return; // lock 会在返回时自动释放
                 }
 
                 size_t pool_index = pointer_iter->second;
                 if (pool_index >= pool_blocks_.size())
                 {
-                    xSemaphoreGive(mutex_);
-                    return;
+                    return; // lock 会在返回时自动释放
                 }
 
+                // 获取块头
                 auto* block = reinterpret_cast<BlockHeader*>(reinterpret_cast<uint8_t*>(ptr) -
                                                              getHeaderSize());
 
+                // 标记块为空闲
                 block->is_free  = true;
                 void* block_ptr = reinterpret_cast<uint8_t*>(block) + getHeaderSize();
                 auto  it        = free_blocks_by_size_.insert({block->size, block_ptr});
                 free_blocks_iterators_[block_ptr] = it;
+
+                // 合并相邻的空闲块
                 coalesceBlocks(block);
+
+                // 从指针映射中移除
                 pointer_map_.erase(pointer_iter);
 
-                xSemaphoreGive(mutex_);
+                // lock 会在返回时自动释放
             }
 
             void MemoryPool::reset()
             {
-                if (mutex_ == nullptr)
+                if (!mutex_.isValid())
                 {
                     return;
                 }
 
-                if (xSemaphoreTake(mutex_, portMAX_DELAY) != pdTRUE)
+                // 使用 RAII 锁守卫
+                MutexLockGuard lock(mutex_.get());
+                if (!lock.isLocked())
                 {
                     return;
                 }
 
+                // 清空所有数据结构
+                // pool_blocks_ 中的 unique_ptr 会自动释放内存（RAII）
                 pool_blocks_.clear();
                 pointer_map_.clear();
                 free_blocks_by_size_.clear();
                 free_blocks_iterators_.clear();
 
-                xSemaphoreGive(mutex_);
+                // lock 会在返回时自动释放
             }
 
             MemoryPool::Stats MemoryPool::getStats() const
             {
                 Stats stats{0, 0, 0, 0, 0};
 
-                if (mutex_ == nullptr)
+                if (!mutex_.isValid())
                 {
                     return stats;
                 }
 
-                // 获取互斥锁
-                if (xSemaphoreTake(mutex_, portMAX_DELAY) != pdTRUE)
+                // 使用 RAII 锁守卫
+                MutexLockGuard lock(mutex_.get());
+                if (!lock.isLocked())
                 {
                     return stats;
                 }
 
+                // 遍历所有内存池块，统计信息
                 for (const auto& pool_block : pool_blocks_)
                 {
                     stats.total_memory += pool_block.size;
@@ -243,9 +270,7 @@ namespace app
                     }
                 }
 
-                // 释放互斥锁
-                xSemaphoreGive(mutex_);
-
+                // lock 会在返回时自动释放
                 return stats;
             }
 
@@ -256,7 +281,7 @@ namespace app
                                          : pool_blocks_.back().size * expansion_factor_);
 
                 new_size = std::max(new_size, required_size + getHeaderSize());
-                initializePool(new_size);
+                initPool(new_size);
             }
 
             MemoryPool::BlockHeader* MemoryPool::findFreeBlock(size_t size)
@@ -387,5 +412,5 @@ namespace app
             }
 
         } // namespace memory
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

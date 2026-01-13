@@ -104,8 +104,8 @@ namespace app
                 bool isStarted() const;
 
             private:
-                NTPManager()                             = default;
-                ~NTPManager()                            = default;
+                NTPManager() = default;
+                ~NTPManager();
                 NTPManager(const NTPManager&)            = delete;
                 NTPManager& operator=(const NTPManager&) = delete;
 
@@ -121,5 +121,5 @@ namespace app
             };
 
         } // namespace ntp
-    }     // namespace protocol
+    } // namespace protocol
 } // namespace app

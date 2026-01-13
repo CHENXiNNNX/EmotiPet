@@ -92,7 +92,7 @@ namespace app
             Assets(const Assets&)            = delete;
             Assets& operator=(const Assets&) = delete;
 
-            bool     initializePartition();
+            bool     initPartition();
             uint32_t calculateChecksum(const char* data, uint32_t length);
 
             const esp_partition_t*       partition_       = nullptr;

@@ -39,5 +39,5 @@ namespace app
             }
 
         } // namespace power
-    }     // namespace sys
+    } // namespace sys
 } // namespace app

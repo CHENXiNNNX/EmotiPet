@@ -134,18 +134,19 @@ namespace app
 
             std::string OtaManager::buildBaseJsonMessage(const std::string& type) const
             {
-                cJSON* json = cJSON_CreateObject();
-                cJSON_AddStringToObject(json, "type", type.c_str());
-                cJSON_AddStringToObject(json, "from", device_id_.c_str());
-                cJSON_AddStringToObject(json, "to", "ota_server");
-                cJSON_AddStringToObject(json, "timestamp", getTimestamp().c_str());
+                JsonRAII json;
+                if (!json.isValid())
+                {
+                    return "";
+                }
 
-                char*       json_str = cJSON_Print(json);
-                std::string result(json_str);
-                free(json_str);
-                cJSON_Delete(json);
+                cJSON_AddStringToObject(json.get(), "type", type.c_str());
+                cJSON_AddStringToObject(json.get(), "from", device_id_.c_str());
+                cJSON_AddStringToObject(json.get(), "to", "ota_server");
+                cJSON_AddStringToObject(json.get(), "timestamp", getTimestamp().c_str());
 
-                return result;
+                JsonStringRAII json_str(cJSON_Print(json.get()));
+                return json_str.isValid() ? json_str.toString() : std::string();
             }
 
             // ==================== JSON 消息构建 ====================
@@ -153,31 +154,31 @@ namespace app
             std::string OtaManager::buildCheckUpdateMessage() const
             {
                 std::string base_json = buildBaseJsonMessage("check_update");
-                cJSON*      json      = cJSON_Parse(base_json.c_str());
-                if (json == nullptr)
+                JsonRAII    json(base_json.c_str());
+                if (!json.isValid())
                 {
-                    cJSON* fallback_json = cJSON_CreateObject();
-                    cJSON_AddStringToObject(fallback_json, "type", "check_update");
-                    cJSON_AddStringToObject(fallback_json, "from", device_id_.c_str());
-                    cJSON_AddStringToObject(fallback_json, "to", "ota_server");
-                    cJSON_AddStringToObject(fallback_json, "current_version",
+                    // 回退方案：创建新的 JSON 对象
+                    JsonRAII fallback_json;
+                    if (!fallback_json.isValid())
+                    {
+                        return "";
+                    }
+                    cJSON_AddStringToObject(fallback_json.get(), "type", "check_update");
+                    cJSON_AddStringToObject(fallback_json.get(), "from", device_id_.c_str());
+                    cJSON_AddStringToObject(fallback_json.get(), "to", "ota_server");
+                    cJSON_AddStringToObject(fallback_json.get(), "current_version",
                                             current_version_.c_str());
-                    cJSON_AddStringToObject(fallback_json, "timestamp", getTimestamp().c_str());
+                    cJSON_AddStringToObject(fallback_json.get(), "timestamp",
+                                            getTimestamp().c_str());
 
-                    char*       json_str = cJSON_Print(fallback_json);
-                    std::string result(json_str);
-                    free(json_str);
-                    cJSON_Delete(fallback_json);
-                    return result;
+                    JsonStringRAII json_str(cJSON_Print(fallback_json.get()));
+                    return json_str.isValid() ? json_str.toString() : std::string();
                 }
 
-                cJSON_AddStringToObject(json, "current_version", current_version_.c_str());
+                cJSON_AddStringToObject(json.get(), "current_version", current_version_.c_str());
 
-                char*       json_str = cJSON_Print(json);
-                std::string result(json_str);
-                free(json_str);
-                cJSON_Delete(json);
-                return result;
+                JsonStringRAII json_str(cJSON_Print(json.get()));
+                return json_str.isValid() ? json_str.toString() : std::string();
             }
 
             std::string OtaManager::buildGetFirmwareInfoMessage() const
@@ -188,123 +189,134 @@ namespace app
             std::string OtaManager::buildRequestFirmwareMessage(const FirmwareInfo& info) const
             {
                 std::string base_json = buildBaseJsonMessage("request_firmware");
-                cJSON*      json      = cJSON_Parse(base_json.c_str());
-                if (json == nullptr)
+                JsonRAII    json(base_json.c_str());
+                if (!json.isValid())
                 {
-                    cJSON* fallback_json = cJSON_CreateObject();
-                    cJSON_AddStringToObject(fallback_json, "type", "request_firmware");
-                    cJSON_AddStringToObject(fallback_json, "from", device_id_.c_str());
-                    cJSON_AddStringToObject(fallback_json, "to", "ota_server");
-                    cJSON_AddStringToObject(fallback_json, "timestamp", getTimestamp().c_str());
+                    // 回退方案：创建新的 JSON 对象
+                    JsonRAII fallback_json;
+                    if (!fallback_json.isValid())
+                    {
+                        return "";
+                    }
+                    cJSON_AddStringToObject(fallback_json.get(), "type", "request_firmware");
+                    cJSON_AddStringToObject(fallback_json.get(), "from", device_id_.c_str());
+                    cJSON_AddStringToObject(fallback_json.get(), "to", "ota_server");
+                    cJSON_AddStringToObject(fallback_json.get(), "timestamp",
+                                            getTimestamp().c_str());
 
-                    cJSON* data = cJSON_CreateObject();
-                    cJSON_AddStringToObject(data, "name", info.name.c_str());
-                    cJSON_AddStringToObject(data, "target_version", info.version.c_str());
-                    cJSON_AddStringToObject(data, "md5", info.md5.c_str());
-                    cJSON_AddItemToObject(fallback_json, "data", data);
+                    JsonRAII data;
+                    if (data.isValid())
+                    {
+                        cJSON_AddStringToObject(data.get(), "name", info.name.c_str());
+                        cJSON_AddStringToObject(data.get(), "target_version", info.version.c_str());
+                        cJSON_AddStringToObject(data.get(), "md5", info.md5.c_str());
+                        cJSON_AddItemToObject(fallback_json.get(), "data", data.release());
+                    }
 
-                    char*       json_str = cJSON_Print(fallback_json);
-                    std::string result(json_str);
-                    free(json_str);
-                    cJSON_Delete(fallback_json);
-                    return result;
+                    JsonStringRAII json_str(cJSON_Print(fallback_json.get()));
+                    return json_str.isValid() ? json_str.toString() : std::string();
                 }
 
-                cJSON* data = cJSON_CreateObject();
-                cJSON_AddStringToObject(data, "name", info.name.c_str());
-                cJSON_AddStringToObject(data, "target_version", info.version.c_str());
-                cJSON_AddStringToObject(data, "md5", info.md5.c_str());
-                cJSON_AddItemToObject(json, "data", data);
+                JsonRAII data;
+                if (data.isValid())
+                {
+                    cJSON_AddStringToObject(data.get(), "name", info.name.c_str());
+                    cJSON_AddStringToObject(data.get(), "target_version", info.version.c_str());
+                    cJSON_AddStringToObject(data.get(), "md5", info.md5.c_str());
+                    cJSON_AddItemToObject(json.get(), "data", data.release());
+                }
 
-                char*       json_str = cJSON_Print(json);
-                std::string result(json_str);
-                free(json_str);
-                cJSON_Delete(json);
-                return result;
+                JsonStringRAII json_str(cJSON_Print(json.get()));
+                return json_str.isValid() ? json_str.toString() : std::string();
             }
 
             std::string OtaManager::buildReportStatusMessage(uint8_t status, uint8_t progress) const
             {
                 std::string base_json = buildBaseJsonMessage("report_status");
-                cJSON*      json      = cJSON_Parse(base_json.c_str());
-                if (json == nullptr)
+                JsonRAII    json(base_json.c_str());
+                if (!json.isValid())
                 {
-                    cJSON* fallback_json = cJSON_CreateObject();
-                    cJSON_AddStringToObject(fallback_json, "type", "report_status");
-                    cJSON_AddStringToObject(fallback_json, "from", device_id_.c_str());
-                    cJSON_AddStringToObject(fallback_json, "to", "ota_server");
-                    cJSON_AddStringToObject(fallback_json, "timestamp", getTimestamp().c_str());
+                    // 回退方案：创建新的 JSON 对象
+                    JsonRAII fallback_json;
+                    if (!fallback_json.isValid())
+                    {
+                        return "";
+                    }
+                    cJSON_AddStringToObject(fallback_json.get(), "type", "report_status");
+                    cJSON_AddStringToObject(fallback_json.get(), "from", device_id_.c_str());
+                    cJSON_AddStringToObject(fallback_json.get(), "to", "ota_server");
+                    cJSON_AddStringToObject(fallback_json.get(), "timestamp",
+                                            getTimestamp().c_str());
 
-                    cJSON* data = cJSON_CreateObject();
-                    cJSON_AddNumberToObject(data, "status", status);
-                    cJSON_AddNumberToObject(data, "progress", progress);
-                    cJSON_AddStringToObject(data, "current_version", current_version_.c_str());
-                    cJSON_AddItemToObject(fallback_json, "data", data);
+                    JsonRAII data;
+                    if (data.isValid())
+                    {
+                        cJSON_AddNumberToObject(data.get(), "status", status);
+                        cJSON_AddNumberToObject(data.get(), "progress", progress);
+                        cJSON_AddStringToObject(data.get(), "current_version",
+                                                current_version_.c_str());
+                        cJSON_AddItemToObject(fallback_json.get(), "data", data.release());
+                    }
 
-                    char*       json_str = cJSON_Print(fallback_json);
-                    std::string result(json_str);
-                    free(json_str);
-                    cJSON_Delete(fallback_json);
-                    return result;
+                    JsonStringRAII json_str(cJSON_Print(fallback_json.get()));
+                    return json_str.isValid() ? json_str.toString() : std::string();
                 }
 
-                cJSON* data = cJSON_CreateObject();
-                cJSON_AddNumberToObject(data, "status", status);
-                cJSON_AddNumberToObject(data, "progress", progress);
-                cJSON_AddStringToObject(data, "current_version", current_version_.c_str());
-                cJSON_AddItemToObject(json, "data", data);
+                JsonRAII data;
+                if (data.isValid())
+                {
+                    cJSON_AddNumberToObject(data.get(), "status", status);
+                    cJSON_AddNumberToObject(data.get(), "progress", progress);
+                    cJSON_AddStringToObject(data.get(), "current_version",
+                                            current_version_.c_str());
+                    cJSON_AddItemToObject(json.get(), "data", data.release());
+                }
 
-                char*       json_str = cJSON_Print(json);
-                std::string result(json_str);
-                free(json_str);
-                cJSON_Delete(json);
-                return result;
+                JsonStringRAII json_str(cJSON_Print(json.get()));
+                return json_str.isValid() ? json_str.toString() : std::string();
             }
 
             bool OtaManager::parseReplyUpdate(const std::string& json, int& respond,
                                               std::string& download_url)
             {
-                cJSON* root = cJSON_Parse(json.c_str());
-                if (!root)
+                JsonRAII root(json.c_str());
+                if (!root.isValid())
                 {
                     ESP_LOGE(TAG, "JSON 解析失败: %s", cJSON_GetErrorPtr());
                     return false;
                 }
 
-                cJSON* respond_item = cJSON_GetObjectItem(root, "respond");
+                cJSON* respond_item = cJSON_GetObjectItem(root.get(), "respond");
                 if (cJSON_IsNumber(respond_item))
                 {
                     respond = respond_item->valueint;
                 }
                 else
                 {
-                    cJSON_Delete(root);
                     return false;
                 }
 
-                cJSON* url_item = cJSON_GetObjectItem(root, "download_url");
+                cJSON* url_item = cJSON_GetObjectItem(root.get(), "download_url");
                 if (cJSON_IsString(url_item))
                 {
                     download_url = url_item->valuestring;
                 }
 
-                cJSON_Delete(root);
                 return true;
             }
 
             bool OtaManager::parseFirmwareInfo(const std::string& json, FirmwareInfo& info)
             {
-                cJSON* root = cJSON_Parse(json.c_str());
-                if (!root)
+                JsonRAII root(json.c_str());
+                if (!root.isValid())
                 {
                     ESP_LOGE(TAG, "JSON 解析失败: %s", cJSON_GetErrorPtr());
                     return false;
                 }
 
-                cJSON* file_item = cJSON_GetObjectItem(root, "file");
+                cJSON* file_item = cJSON_GetObjectItem(root.get(), "file");
                 if (!file_item || !cJSON_IsObject(file_item))
                 {
-                    cJSON_Delete(root);
                     return false;
                 }
 
@@ -344,32 +356,29 @@ namespace app
                     info.time = time_item->valuestring;
                 }
 
-                cJSON_Delete(root);
                 return true;
             }
 
             bool OtaManager::parseError(const std::string& json, int& code, std::string& message)
             {
-                cJSON* root = cJSON_Parse(json.c_str());
-                if (!root)
+                JsonRAII root(json.c_str());
+                if (!root.isValid())
                 {
                     return false;
                 }
 
                 // 检查是否是错误响应类型
-                cJSON* type_item = cJSON_GetObjectItem(root, "type");
+                cJSON* type_item = cJSON_GetObjectItem(root.get(), "type");
                 if (!type_item || !cJSON_IsString(type_item) ||
                     strcmp(type_item->valuestring, "error") != 0)
                 {
-                    cJSON_Delete(root);
                     return false;
                 }
 
                 // 解析 data 字段
-                cJSON* data_item = cJSON_GetObjectItem(root, "data");
+                cJSON* data_item = cJSON_GetObjectItem(root.get(), "data");
                 if (!data_item || !cJSON_IsObject(data_item))
                 {
-                    cJSON_Delete(root);
                     return false;
                 }
 
@@ -385,7 +394,6 @@ namespace app
                     message = message_item->valuestring;
                 }
 
-                cJSON_Delete(root);
                 return true;
             }
 
@@ -572,14 +580,16 @@ namespace app
                 };
 
                 // 使用智能指针管理上下文，避免内存泄漏
-                // 在堆上分配shared_ptr，任务函数负责释放
                 auto ctx =
                     std::make_shared<UpdateContext>(server_url, firmware_info, timeout_ms, this,
                                                     progress_callback_, complete_callback_);
-                auto ctx_ptr = new std::shared_ptr<UpdateContext>(ctx);
+
+                // 使用 unique_ptr 管理 shared_ptr 指针，传递给任务函数
+                auto ctx_ptr = std::make_unique<std::shared_ptr<UpdateContext>>(ctx);
 
                 app::sys::task::Task::TaskFunction task_function = [](void* param)
                 {
+                    // 使用 unique_ptr 自动管理 shared_ptr 指针
                     std::unique_ptr<std::shared_ptr<UpdateContext>> ctx_owner(
                         static_cast<std::shared_ptr<UpdateContext>*>(param));
                     auto  ctx     = *ctx_owner;
@@ -680,10 +690,9 @@ namespace app
                     request.method     = app::protocol::http::HttpMethod::GET;
                     request.timeout_ms = ctx->timeout_ms;
 
-                    // MD5 计算
-                    mbedtls_md5_context md5_ctx;
-                    mbedtls_md5_init(&md5_ctx);
-                    mbedtls_md5_starts(&md5_ctx);
+                    // MD5 计算（使用 RAII 自动管理）
+                    Md5ContextRAII md5_ctx;
+                    mbedtls_md5_starts(&md5_ctx.get());
 
                     size_t total_received = 0;
                     size_t total_size     = ctx->firmware_info.size;
@@ -724,7 +733,7 @@ namespace app
                                 return false;
                             }
 
-                            mbedtls_md5_update(&md5_ctx, data, len);
+                            mbedtls_md5_update(&md5_ctx.get(), data, len);
                             total_received += len;
                             float percent = 0.0f;
                             if (total_size > 0)
@@ -753,7 +762,7 @@ namespace app
                         const char* error_msg = was_cancelled ? "下载已取消" : "下载失败";
                         ESP_LOGE(TAG, "%s", error_msg);
                         esp_ota_abort(ota_handle);
-                        mbedtls_md5_free(&md5_ctx);
+                        // md5_ctx 会在作用域结束时自动释放（RAII）
                         manager.updateStatus(OtaStatus::FAILED);
                         if (ctx->complete_callback)
                         {
@@ -768,8 +777,8 @@ namespace app
                     }
 
                     unsigned char md5_result[16];
-                    mbedtls_md5_finish(&md5_ctx, md5_result);
-                    mbedtls_md5_free(&md5_ctx);
+                    mbedtls_md5_finish(&md5_ctx.get(), md5_result);
+                    // md5_ctx 会在作用域结束时自动释放（RAII）
 
                     std::string md5_str = manager.md5ToString(md5_result);
                     manager.updateStatus(OtaStatus::VERIFYING);
@@ -857,14 +866,17 @@ namespace app
                     // ctx_owner会在函数返回时自动释放shared_ptr
                 };
 
-                auto task =
-                    std::make_unique<app::sys::task::Task>(task_function, task_config, ctx_ptr);
+                // 释放 ctx_ptr 的所有权，传递给任务（任务函数会负责释放）
+                void* task_param = ctx_ptr.release();
+                auto  task =
+                    std::make_unique<app::sys::task::Task>(task_function, task_config, task_param);
 
                 if (!task->start())
                 {
                     ESP_LOGE(TAG, "启动 OTA 升级任务失败");
                     handleError(OtaStatus::FAILED, "启动 OTA 升级任务失败");
-                    delete ctx_ptr;
+                    // 如果启动失败，需要手动删除传递的指针
+                    delete static_cast<std::shared_ptr<UpdateContext>*>(task_param);
                     return false;
                 }
 
@@ -980,5 +992,5 @@ namespace app
             }
 
         } // namespace ota
-    }     // namespace tool
+    } // namespace tool
 } // namespace app

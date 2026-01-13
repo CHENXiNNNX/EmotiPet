@@ -49,9 +49,8 @@ namespace app
 
                 bool init(const Config* config = nullptr);
 
-                // input_reference=false: 返回单通道 PCM (dest 长度 >= samples)
-                // input_reference=true: 返回双通道交错 [mic0,ref0,mic1,ref1,...] (dest 长度 >=
-                // samples*2)
+                // input_reference=false: 返回 4 通道交错 PCM [mic1,mic2,mic3,mic4,mic1,...] (dest 长度 >= samples*4)
+                // input_reference=true: 返回 8 通道交错 [mic1,ref1,mic2,ref2,mic3,ref3,mic4,ref4,...] (dest 长度 >= samples*8)
                 int  read(int16_t* dest, int samples);
                 int  write(const int16_t* data, int samples);
                 void setOutputVolume(int volume);
@@ -63,7 +62,7 @@ namespace app
                 }
 
             private:
-                void CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
+                void createDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
                                           gpio_num_t dout, gpio_num_t din);
 
                 const audio_codec_data_if_t* data_if_      = nullptr;
@@ -88,5 +87,5 @@ namespace app
                 std::mutex data_if_mutex_;
             };
         } // namespace audio
-    }     // namespace media
+    } // namespace media
 } // namespace app

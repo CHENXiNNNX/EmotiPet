@@ -121,7 +121,7 @@ namespace app
                 {
                     ESP_LOGI(TAG, "  [%u] SSID: %s", (unsigned int)i, saved_creds[i].ssid);
                 }
-                
+
                 if (!provision.start())
                 {
                     ESP_LOGE(TAG, "启动配网失败");
@@ -317,7 +317,7 @@ namespace app
 
     bool App::initI2C(gpio_num_t sda, gpio_num_t scl, i2c_port_t port)
     {
-        common::i2c::Config cfg;
+        i2c::Config cfg;
         cfg.sda_pin = sda;
         cfg.scl_pin = scl;
         cfg.port    = port;

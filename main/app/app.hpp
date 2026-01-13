@@ -1,11 +1,11 @@
 #pragma once
 
 #include "assets/assets.hpp"
-#include "common/i2c/i2c.hpp"
 #include "device/qmi8658a/qmi8658a.hpp"
 #include "device/APDS-9930/apds9930.hpp"
 #include "device/mpr121/mpr121.hpp"
 #include "device/pressure/m0404.hpp"
+#include "i2c/i2c.hpp"
 #include "media/audio/audio.hpp"
 #include "network/network.hpp"
 #include <string>
@@ -86,9 +86,9 @@ namespace app
         void logQMI8658AInfo();
 
         // 成员变量
-        common::i2c::I2c                 i2c_;
+        i2c::I2c                   i2c_;
         device::qmi8658a::Qmi8658a qmi8658a_;
-        media::audio::Audio              audio_;
+        media::audio::Audio        audio_;
     };
 
 } // namespace app

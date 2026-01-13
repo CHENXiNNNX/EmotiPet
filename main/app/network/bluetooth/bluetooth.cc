@@ -531,11 +531,11 @@ namespace app
                 State              new_state     = State::IDLE;
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
-                    connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
-                                                      [&](const ConnectionInfo& c) {
-                                                          return c.conn_handle == info.conn_handle;
-                                                      }),
-                                       connections_.end());
+                    connections_.erase(
+                        std::remove_if(connections_.begin(), connections_.end(),
+                                       [&](const ConnectionInfo& c)
+                                       { return c.conn_handle == info.conn_handle; }),
+                        connections_.end());
 
                     cb = disconnect_callback_;
 
@@ -596,5 +596,5 @@ namespace app
             }
 
         } // namespace ble
-    }     // namespace network
+    } // namespace network
 } // namespace app

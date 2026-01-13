@@ -1,11 +1,11 @@
-#include "common/i2c/i2c.hpp"
+#include "i2c/i2c.hpp"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 static const char* const TAG = "Main";
 
-using namespace app::common::i2c;
+using namespace app::i2c;
 
 extern "C" void app_main(void)
 {

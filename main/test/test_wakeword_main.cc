@@ -1,5 +1,5 @@
 #include "assets/assets.hpp"
-#include "common/i2c/i2c.hpp"
+#include "i2c/i2c.hpp"
 #include "media/audio/audio.hpp"
 #include "media/audio/wakeword/wakeword.hpp"
 #include "system/event/event.hpp"
@@ -11,7 +11,7 @@
 static const char* const TAG = "Main";
 
 using namespace app::assets;
-using namespace app::common::i2c;
+using namespace app::i2c;
 using namespace app::media::audio;
 using namespace app::media::audio::wakeword;
 using namespace app::sys::event;
@@ -134,8 +134,8 @@ extern "C" void app_main(void)
     // ========== 3. 硬件初始化 ==========
     ESP_LOGI(TAG, "\n[测试 3] 硬件初始化");
 
-    I2c                      i2c;
-    app::common::i2c::Config i2c_cfg;
+    I2c         i2c;
+    i2c::Config i2c_cfg;
     i2c_cfg.port    = I2C_NUM_1;
     i2c_cfg.sda_pin = GPIO_NUM_17;
     i2c_cfg.scl_pin = GPIO_NUM_18;

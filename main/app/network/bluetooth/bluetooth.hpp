@@ -83,7 +83,7 @@ namespace app
                 constexpr uint32_t WRITE_ENC    = 0x0200; // 需要加密才能写
                 constexpr uint32_t READ_AUTHEN  = 0x0400; // 需要认证才能读
                 constexpr uint32_t WRITE_AUTHEN = 0x0800; // 需要认证才能写
-            }                                             // namespace Property
+            } // namespace Property
 
             // 回调函数类型
             using StateCallback      = std::function<void(State state)>;
@@ -289,5 +289,5 @@ namespace app
             };
 
         } // namespace ble
-    }     // namespace network
+    } // namespace network
 } // namespace app

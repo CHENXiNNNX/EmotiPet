@@ -110,7 +110,7 @@ namespace app
                     return false;
                 }
 
-                CreateDuplexChannels(config_.mclk, config_.bclk, config_.ws, config_.dout,
+                createDuplexChannels(config_.mclk, config_.bclk, config_.ws, config_.dout,
                                      config_.din);
                 audio_codec_i2s_cfg_t i2s_cfg = {
                     .port      = I2S_NUM_0,
@@ -202,7 +202,7 @@ namespace app
                 return true;
             }
 
-            void Audio::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
+            void Audio::createDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
                                              gpio_num_t dout, gpio_num_t din)
             {
                 i2s_chan_config_t chan_cfg = {
@@ -282,8 +282,9 @@ namespace app
 
                 if (!config_.input_reference)
                 {
+                    // 读取 4 通道交错数据: [mic1, mic2, mic3, mic4, mic1, mic2, ...]
                     esp_err_t ret =
-                        esp_codec_dev_read(input_dev_, (void*)dest, samples * sizeof(int16_t));
+                        esp_codec_dev_read(input_dev_, (void*)dest, samples * 4 * sizeof(int16_t));
                     if (ret != ESP_OK)
                     {
                         ESP_LOGE(TAG, "读取音频数据失败: %s", esp_err_to_name(ret));
@@ -293,8 +294,9 @@ namespace app
                 }
                 else
                 {
+                    // 参考信号模式：8 通道交错数据
                     esp_err_t ret =
-                        esp_codec_dev_read(input_dev_, (void*)dest, samples * 2 * sizeof(int16_t));
+                        esp_codec_dev_read(input_dev_, (void*)dest, samples * 8 * sizeof(int16_t));
                     if (ret != ESP_OK)
                     {
                         ESP_LOGE(TAG, "读取音频数据失败: %s", esp_err_to_name(ret));
@@ -351,16 +353,23 @@ namespace app
                 {
                     esp_codec_dev_sample_info_t fs = {
                         .bits_per_sample = 16,
-                        .channel         = 1,
-                        .channel_mask    = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0),
+                        .channel         = 4,  // 启用 4 个麦克风通道
+                        .channel_mask    = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0) |
+                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1) |
+                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(2) |
+                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(3),
                         .sample_rate     = (uint32_t)config_.input_sample_rate,
                         .mclk_multiple   = 0,
                     };
 
                     if (config_.input_reference)
                     {
-                        fs.channel_mask |= ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1);
-                        fs.channel = 2;
+                        // 参考信号模式：4 个麦克风 + 4 个参考信号 = 8 通道
+                        fs.channel_mask |= ESP_CODEC_DEV_MAKE_CHANNEL_MASK(4) |
+                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(5) |
+                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(6) |
+                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(7);
+                        fs.channel = 8;
                     }
 
                     esp_err_t ret = esp_codec_dev_open(input_dev_, &fs);
@@ -370,8 +379,12 @@ namespace app
                         return;
                     }
 
-                    esp_codec_dev_set_in_channel_gain(
-                        input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0), input_gain_);
+                    // 为所有 4 个麦克风设置增益
+                    for (int i = 0; i < 4; i++)
+                    {
+                        esp_codec_dev_set_in_channel_gain(
+                            input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(i), input_gain_);
+                    }
                 }
                 else
                 {
@@ -429,5 +442,5 @@ namespace app
                 output_enabled_ = enable;
             }
         } // namespace audio
-    }     // namespace media
+    } // namespace media
 } // namespace app

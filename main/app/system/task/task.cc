@@ -1,6 +1,7 @@
 #include "task.hpp"
 
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -25,8 +26,8 @@ namespace app
                 void*              user_param;
             };
 
-            static std::unordered_map<TaskHandle_t, TaskStartParam*> g_task_params;
-            static std::mutex                                        g_task_params_mutex;
+            static std::unordered_map<TaskHandle_t, std::unique_ptr<TaskStartParam>> g_task_params;
+            static std::mutex g_task_params_mutex;
 
             Task::Task(TaskFunction function, const Config& config, void* param)
                 : function_(function), config_(config), param_(param), handle_(nullptr),
@@ -47,12 +48,7 @@ namespace app
                 TaskHandle_t self = xTaskGetCurrentTaskHandle();
                 {
                     std::lock_guard<std::mutex> lock(g_task_params_mutex);
-                    auto                        it = g_task_params.find(self);
-                    if (it != g_task_params.end())
-                    {
-                        delete it->second;
-                        g_task_params.erase(it);
-                    }
+                    g_task_params.erase(self);
                 }
                 vTaskDelete(nullptr);
             }
@@ -71,36 +67,32 @@ namespace app
                     return false;
                 }
 
-                auto* start_param = new TaskStartParam{function_, param_};
-                if (!start_param)
-                {
-                    ESP_LOGE(TAG, "分配任务参数失败");
-                    return false;
-                }
+                auto start_param =
+                    std::make_unique<TaskStartParam>(TaskStartParam{function_, param_});
 
                 if (config_.delay_ms > 0)
                 {
                     vTaskDelay(pdMS_TO_TICKS(config_.delay_ms));
                 }
 
+                // 使用 .get() 获取原始指针，因为 FreeRTOS API 需要原始指针
                 BaseType_t result;
                 if (config_.core_id == -1)
                 {
-                    result = xTaskCreate(taskWrapper, config_.name,
-                                         config_.stack_size / sizeof(StackType_t), start_param,
-                                         static_cast<UBaseType_t>(config_.priority), &handle_);
+                    result = xTaskCreate(
+                        taskWrapper, config_.name, config_.stack_size / sizeof(StackType_t),
+                        start_param.get(), static_cast<UBaseType_t>(config_.priority), &handle_);
                 }
                 else
                 {
                     result = xTaskCreatePinnedToCore(
                         taskWrapper, config_.name, config_.stack_size / sizeof(StackType_t),
-                        start_param, static_cast<UBaseType_t>(config_.priority), &handle_,
+                        start_param.get(), static_cast<UBaseType_t>(config_.priority), &handle_,
                         config_.core_id);
                 }
 
                 if (result != pdPASS)
                 {
-                    delete start_param;
                     ESP_LOGE(TAG, "创建任务 %s 失败", config_.name);
                     return false;
                 }
@@ -109,7 +101,8 @@ namespace app
 
                 {
                     std::lock_guard<std::mutex> lock(g_task_params_mutex);
-                    g_task_params[handle_] = start_param;
+                    // 转移所有权到 map
+                    g_task_params[handle_] = std::move(start_param);
                 }
 
                 vTaskResume(handle_);
@@ -126,12 +119,7 @@ namespace app
 
                     {
                         std::lock_guard<std::mutex> lock(g_task_params_mutex);
-                        auto                        it = g_task_params.find(handle_);
-                        if (it != g_task_params.end())
-                        {
-                            delete it->second;
-                            g_task_params.erase(it);
-                        }
+                        g_task_params.erase(handle_);
                     }
 
                     handle_  = nullptr;
@@ -302,5 +290,5 @@ namespace app
             }
 
         } // namespace task
-    }     // namespace sys
+    } // namespace sys
 } // namespace app

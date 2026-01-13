@@ -130,6 +130,32 @@ namespace app
                 return true;
             }
 
+            WebSocketClient::~WebSocketClient()
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (initialized_)
+                {
+                    // 在析构函数中不调用 deinit()，因为它需要 unlock mutex
+                    // 直接清理资源
+                    if (state_ == State::CONNECTED || state_ == State::CONNECTING)
+                    {
+                        if (client_handle_ != nullptr)
+                        {
+                            esp_websocket_client_stop(client_handle_);
+                        }
+                    }
+
+                    if (client_handle_ != nullptr)
+                    {
+                        esp_websocket_client_destroy(client_handle_);
+                        client_handle_ = nullptr;
+                    }
+
+                    initialized_ = false;
+                    state_       = State::IDLE;
+                }
+            }
+
             void WebSocketClient::deinit()
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -302,7 +328,7 @@ namespace app
 
                 TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
                 int        sent          = esp_websocket_client_send_text(
-                                    client_handle_, text.c_str(), static_cast<int>(text.length()), timeout_ticks);
+                    client_handle_, text.c_str(), static_cast<int>(text.length()), timeout_ticks);
 
                 if (sent < 0)
                 {
@@ -561,5 +587,5 @@ namespace app
             }
 
         } // namespace websocket
-    }     // namespace protocol
+    } // namespace protocol
 } // namespace app

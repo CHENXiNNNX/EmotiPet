@@ -45,6 +45,14 @@ namespace app
 
             EventManager::EventManager() : initialized_(false) {}
 
+            EventManager::~EventManager()
+            {
+                if (initialized_)
+                {
+                    deinit();
+                }
+            }
+
             EventManager& EventManager::getInstance()
             {
                 static EventManager instance;
@@ -282,5 +290,5 @@ namespace app
             }
 
         } // namespace event
-    }     // namespace sys
+    } // namespace sys
 } // namespace app
