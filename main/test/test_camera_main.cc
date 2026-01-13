@@ -40,7 +40,7 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     // 初始化 I2C
-    app::i2c::I2c i2c;
+    app::i2c::I2c    i2c;
     app::i2c::Config i2c_cfg;
     i2c_cfg.sda_pin = app::config::I2C_SDA;
     i2c_cfg.scl_pin = app::config::I2C_SCL;
@@ -56,7 +56,7 @@ extern "C" void app_main(void)
     app::media::camera::Camera camera;
     app::media::camera::Config cam_cfg;
     cam_cfg.i2c_handle = i2c.getBusHandle();
-    cam_cfg.xclk_freq = app::config::CAM_XCLK_FREQ;
+    cam_cfg.xclk_freq  = app::config::CAM_XCLK_FREQ;
 
     if (!camera.init(&cam_cfg))
     {
@@ -64,25 +64,21 @@ extern "C" void app_main(void)
         return;
     }
 
-    ESP_LOGI(TAG, "摄像头就绪: %s %dx%d %s",
-             camera.getSensorName().c_str(),
+    ESP_LOGI(TAG, "摄像头就绪: %s %dx%d %s", camera.getSensorName().c_str(),
              camera.getResolution().width, camera.getResolution().height,
              getFormatName(camera.getPixelFormat()));
 
     // 开始测试循环
     int frame_count = 0;
-    
+
     while (true)
     {
         app::media::camera::FrameBuffer frame;
         if (camera.capture(frame, 2))
         {
             frame_count++;
-            ESP_LOGI(TAG, "[#%d] %dx%d %s %.1fKB",
-                     frame_count,
-                     frame.res.width, frame.res.height,
-                     getFormatName(frame.format),
-                     frame.len / 1024.0f);
+            ESP_LOGI(TAG, "[#%d] %dx%d %s %.1fKB", frame_count, frame.res.width, frame.res.height,
+                     getFormatName(frame.format), frame.len / 1024.0f);
         }
         else
         {

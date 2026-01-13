@@ -1,6 +1,6 @@
 #include "app/i2c/i2c.hpp"
 #include "app/media/camera/camera.hpp"
-#include "app/tool/jpeg/encode/encoder.hpp"
+#include "app/media/camera/process/jpeg/encode/jpeg_enc.hpp"
 #include "app/config/config.hpp"
 #include "app/system/task/task.hpp"
 #include <esp_log.h>
@@ -29,7 +29,6 @@ const char* getFormatName(app::media::camera::PixelFormat format)
     }
 }
 
-
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "=== YUV422 → JPEG 编码测试 ===");
@@ -44,7 +43,7 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     // 初始化 I2C
-    app::i2c::I2c i2c;
+    app::i2c::I2c    i2c;
     app::i2c::Config i2c_cfg;
     i2c_cfg.sda_pin = app::config::I2C_SDA;
     i2c_cfg.scl_pin = app::config::I2C_SCL;
@@ -60,7 +59,7 @@ extern "C" void app_main(void)
     app::media::camera::Camera camera;
     app::media::camera::Config cam_cfg;
     cam_cfg.i2c_handle = i2c.getBusHandle();
-    cam_cfg.xclk_freq = app::config::CAM_XCLK_FREQ;
+    cam_cfg.xclk_freq  = app::config::CAM_XCLK_FREQ;
 
     if (!camera.init(&cam_cfg))
     {
@@ -75,8 +74,7 @@ extern "C" void app_main(void)
         return;
     }
 
-    ESP_LOGI(TAG, "摄像头就绪: %s %dx%d YUV422", 
-             camera.getSensorName().c_str(),
+    ESP_LOGI(TAG, "摄像头就绪: %s %dx%d YUV422", camera.getSensorName().c_str(),
              camera.getResolution().width, camera.getResolution().height);
 
     // 预热
@@ -89,12 +87,12 @@ extern "C" void app_main(void)
 
     // 开始测试循环
     int test_count = 0;
-    
+
     while (true)
     {
         test_count++;
         int64_t start_time = esp_timer_get_time();
-        
+
         // 捕获帧
         app::media::camera::FrameBuffer frame;
         if (!camera.capture(frame, 2))
@@ -105,26 +103,23 @@ extern "C" void app_main(void)
         }
 
         // JPEG 编码
-        app::tool::jpeg::encode::EncodeConfig encode_config;
-        encode_config.quality = 80;
+        app::media::camera::process::jpeg::encode::EncodeConfig encode_config;
+        encode_config.quality   = 80;
         encode_config.use_psram = true;
 
         int64_t encode_start = esp_timer_get_time();
-        auto jpeg_result = app::tool::jpeg::encode::encodeYUV422ToJPEG(
+        auto    jpeg_result  = app::media::camera::process::jpeg::encode::encodeYUV422ToJPEG(
             frame.data, frame.res.width, frame.res.height, &encode_config);
         int64_t encode_time = esp_timer_get_time() - encode_start;
-        int64_t total_time = esp_timer_get_time() - start_time;
+        int64_t total_time  = esp_timer_get_time() - start_time;
 
         if (jpeg_result)
         {
             float compression_ratio = (jpeg_result.len() * 100.0f) / frame.len;
-            ESP_LOGI(TAG, "[#%d] 成功 | YUV: %.1fKB → JPEG: %.1fKB (%.1f%%) | 编码: %ums | 总计: %ums",
-                     test_count,
-                     frame.len / 1024.0f,
-                     jpeg_result.len() / 1024.0f,
-                     compression_ratio,
-                     (unsigned int)(encode_time / 1000),
-                     (unsigned int)(total_time / 1000));
+            ESP_LOGI(
+                TAG, "[#%d] 成功 | YUV: %.1fKB → JPEG: %.1fKB (%.1f%%) | 编码: %ums | 总计: %ums",
+                test_count, frame.len / 1024.0f, jpeg_result.len() / 1024.0f, compression_ratio,
+                (unsigned int)(encode_time / 1000), (unsigned int)(total_time / 1000));
         }
         else
         {
@@ -134,4 +129,3 @@ extern "C" void app_main(void)
         app::sys::task::TaskManager::delayMs(3000);
     }
 }
-

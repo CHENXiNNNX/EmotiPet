@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assets/assets.hpp"
+#include "chatbot/chatbot.hpp"
 #include "i2c/i2c.hpp"
 #include "device/qmi8658a/qmi8658a.hpp"
 #include "media/audio/audio.hpp"
@@ -27,6 +28,9 @@ namespace app
         // 获取 Audio 实例
         media::audio::Audio& getAudio();
 
+        // 获取 Chatbot 实例
+        chatbot::Chatbot& getChatbot();
+
     private:
         // 初始化 NVS
         bool initNVS();
@@ -49,6 +53,19 @@ namespace app
         // 初始化配网管理器
         bool initProvision();
 
+        /**
+         * @brief 初始化Chatbot
+         * @param server_host 服务器主机地址（IP或域名），如 "192.168.1.100" 或 "example.com"
+         * @param server_port 服务器端口，如 8080
+         * @param ping_interval_sec Ping间隔（秒），默认10秒
+         * @param pingpong_timeout_sec Pong超时（秒），默认10秒
+         * @param reconnect_timeout_ms 重连超时（毫秒），默认10000毫秒
+         * @return 是否成功
+         */
+        bool initChatbot(const std::string& server_host, int server_port,
+                         int ping_interval_sec = 10, int pingpong_timeout_sec = 10,
+                         int reconnect_timeout_ms = 10000);
+
         // 配网状态回调
         void onProvisionStatus(app::network::ProvisionStatus status);
 
@@ -68,6 +85,7 @@ namespace app
         i2c::I2c                   i2c_;
         device::qmi8658a::Qmi8658a qmi8658a_;
         media::audio::Audio        audio_;
+        chatbot::Chatbot           chatbot_;
     };
 
 } // namespace app

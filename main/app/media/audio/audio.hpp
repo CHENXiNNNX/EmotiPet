@@ -49,8 +49,9 @@ namespace app
 
                 bool init(const Config* config = nullptr);
 
-                // input_reference=false: 返回 4 通道交错 PCM [mic1,mic2,mic3,mic4,mic1,...] (dest 长度 >= samples*4)
-                // input_reference=true: 返回 8 通道交错 [mic1,ref1,mic2,ref2,mic3,ref3,mic4,ref4,...] (dest 长度 >= samples*8)
+                // input_reference=false: 返回 4 通道交错 PCM [mic1,mic2,mic3,mic4,mic1,...] (dest
+                // 长度 >= samples*4) input_reference=true: 返回 8 通道交错
+                // [mic1,ref1,mic2,ref2,mic3,ref3,mic4,ref4,...] (dest 长度 >= samples*8)
                 int  read(int16_t* dest, int samples);
                 int  write(const int16_t* data, int samples);
                 void setOutputVolume(int volume);

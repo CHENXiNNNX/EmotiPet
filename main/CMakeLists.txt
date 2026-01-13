@@ -1,16 +1,21 @@
 # Define source files
 set(SOURCES "app/assets/assets.cc"
             "app/battery/battery.cc"
+            "app/chatbot/chatbot.cc"
+            "app/chatbot/handle/handle.cc"
+            "app/chatbot/message/message.cc"
             "app/i2c/i2c.cc"
             "app/device/qmi8658a/qmi8658a.cc"
             "app/device/button/button.cc"
             "app/device/led/led.cc"
             # "app/device/touch/touch.cc"
             "app/media/audio/audio.cc"
-            "app/media/camera/camera.cc"
-            "app/media/audio/processor/processor.cc"
+            "app/media/audio/process/afe/afe.cc"
+            "app/media/audio/process/opus/encode/opus_enc.cc"
+            "app/media/audio/process/opus/decode/opus_dec.cc"
             "app/media/audio/wakeword/wakeword.cc"
             "app/media/camera/camera.cc"
+            "app/media/camera/process/jpeg/encode/jpeg_enc.cc"
             "app/network/bluetooth/bluetooth.cc"
             "app/network/bluetooth/gatt/gatt.cc"
             "app/network/network.cc"
@@ -23,7 +28,7 @@ set(SOURCES "app/assets/assets.cc"
             "app/system/power/power.cc"
             "app/system/task/task.cc"
             # "app/tool/file/file.cc"  
-            "app/tool/jpeg/encode/encoder.cc"
+            
             "app/tool/memory/memory.cc"
             "app/tool/ota/ota.cc"
             "app/tool/time/time.cc"
@@ -35,14 +40,19 @@ set(SOURCES "app/assets/assets.cc"
 set(INCLUDE_DIRS "app"
                  "app/assets"
                  "app/battery"
+                 "app/chatbot"
+                 "app/chatbot/handle"
+                 "app/chatbot/message"
                  "app/i2c"
                  "app/device/qmi8658a"
                  "app/device/button" 
                  "app/device/led"
                 #  "app/device/touch"
                  "app/media/audio"
-                 "app/media/camera"
-                 "app/media/audio/processor"
+                 "app/media/audio/process"
+                 "app/media/audio/process/afe"
+                 "app/media/audio/process/opus/encode"
+                 "app/media/audio/process/opus/decode"
                  "app/media/audio/wakeword"
                  "app/media/camera"
                  "app/network"
@@ -57,7 +67,7 @@ set(INCLUDE_DIRS "app"
                  "app/system/power"
                  "app/system/task"
                 # "app/tool/file"
-                 "app/tool/jpeg/encode"
+                 "app/media/camera/process/jpeg/encode"
                  "app/tool/memory"
                  "app/tool/ota"
                  "app/tool/time"
@@ -96,16 +106,17 @@ endif()
 
 # 从 Kconfig 读取配置
 if(CONFIG_ENABLE_ASSETS_BUILD)
-    # 解析 Multinet 模型列表（空格分隔的字符串转换为列表）
-    string(REPLACE " " ";" MULTINET_MODELS "${CONFIG_ASSETS_MULTINET_MODELS}")
+    # 解析模型列表（空格分隔的字符串转换为列表）
+    # 支持多种模型类型：WakeNet, VADNet, NSNet, MultiNet
+    string(REPLACE " " ";" ASSETS_MODELS "${CONFIG_ASSETS_MODELS}")
     
-    # 唤醒词配置
+    # 唤醒词配置（仅用于 Multinet 模型）
     set(CN_WAKE_WORD "${CONFIG_ASSETS_CN_WAKE_WORD}")
     set(EN_WAKE_WORD "${CONFIG_ASSETS_EN_WAKE_WORD}")
     set(WAKE_WORD_THRESHOLD "${CONFIG_ASSETS_WAKE_WORD_THRESHOLD}")
 else()
     # Assets 构建已禁用
-    set(MULTINET_MODELS "")
+    set(ASSETS_MODELS "")
     set(CN_WAKE_WORD "")
     set(EN_WAKE_WORD "")
     set(WAKE_WORD_THRESHOLD "0.2")
@@ -123,8 +134,8 @@ function(build_assets_bin)
         return()
     endif()
     
-    if(NOT MULTINET_MODELS)
-        message(WARNING "未配置 Multinet 模型，跳过 assets 打包")
+    if(NOT ASSETS_MODELS)
+        message(WARNING "未配置模型，跳过 assets 打包")
         return()
     endif()
     
@@ -135,10 +146,10 @@ function(build_assets_bin)
     set(BUILD_CMD python ${PROJECT_DIR}/scripts/build_assets.py
         --esp_sr_model_path "${ESP_SR_MODEL_PATH}"
         --output "${GENERATED_ASSETS_BIN}"
-        --multinet_models
+        --models
     )
     # 添加模型列表（每个模型作为单独的参数）
-    list(APPEND BUILD_CMD ${MULTINET_MODELS})
+    list(APPEND BUILD_CMD ${ASSETS_MODELS})
     # 只在非空时添加唤醒词参数
     if(CN_WAKE_WORD AND NOT CN_WAKE_WORD STREQUAL "")
         list(APPEND BUILD_CMD --cn_wake_word "${CN_WAKE_WORD}")
@@ -155,7 +166,7 @@ function(build_assets_bin)
         COMMAND ${BUILD_CMD}
         DEPENDS
             ${PROJECT_DIR}/scripts/build_assets.py
-        COMMENT "构建自定义唤醒词 assets.bin"
+        COMMENT "构建 assets.bin（支持多种 ESP-SR 模型）"
         VERBATIM
         WORKING_DIRECTORY ${PROJECT_DIR}
     )
@@ -169,11 +180,11 @@ function(build_assets_bin)
     set(GENERATED_ASSETS_LOCAL_FILE ${GENERATED_ASSETS_BIN} PARENT_SCOPE)
     
     # 转换为字符串用于显示
-    string(REPLACE ";" " " MULTINET_MODELS_STR "${MULTINET_MODELS}")
+    string(REPLACE ";" " " ASSETS_MODELS_STR "${ASSETS_MODELS}")
     
     message(STATUS "Assets 打包配置 (Kconfig):")
     message(STATUS "  输出文件: ${GENERATED_ASSETS_BIN}")
-    message(STATUS "  Multinet 模型: ${MULTINET_MODELS_STR}")
+    message(STATUS "  模型列表: ${ASSETS_MODELS_STR}")
     if(CN_WAKE_WORD)
     message(STATUS "  中文唤醒词: ${CN_WAKE_WORD}")
     else()

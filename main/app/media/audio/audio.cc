@@ -353,22 +353,22 @@ namespace app
                 {
                     esp_codec_dev_sample_info_t fs = {
                         .bits_per_sample = 16,
-                        .channel         = 4,  // 启用 4 个麦克风通道
+                        .channel         = 4, // 启用 4 个麦克风通道
                         .channel_mask    = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0) |
-                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1) |
-                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(2) |
-                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(3),
-                        .sample_rate     = (uint32_t)config_.input_sample_rate,
-                        .mclk_multiple   = 0,
+                                        ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1) |
+                                        ESP_CODEC_DEV_MAKE_CHANNEL_MASK(2) |
+                                        ESP_CODEC_DEV_MAKE_CHANNEL_MASK(3),
+                        .sample_rate   = (uint32_t)config_.input_sample_rate,
+                        .mclk_multiple = 0,
                     };
 
                     if (config_.input_reference)
                     {
                         // 参考信号模式：4 个麦克风 + 4 个参考信号 = 8 通道
                         fs.channel_mask |= ESP_CODEC_DEV_MAKE_CHANNEL_MASK(4) |
-                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(5) |
-                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(6) |
-                                          ESP_CODEC_DEV_MAKE_CHANNEL_MASK(7);
+                                           ESP_CODEC_DEV_MAKE_CHANNEL_MASK(5) |
+                                           ESP_CODEC_DEV_MAKE_CHANNEL_MASK(6) |
+                                           ESP_CODEC_DEV_MAKE_CHANNEL_MASK(7);
                         fs.channel = 8;
                     }
 

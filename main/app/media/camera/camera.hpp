@@ -22,11 +22,11 @@ namespace app
              */
             enum class PixelFormat
             {
-                RGB565,   // 16位RGB格式
-                RGB24,    // 24位RGB格式
-                YUV422,   // YUV422格式
-                YUV420,   // YUV420格式
-                JPEG,     // JPEG压缩格式
+                RGB565, // 16位RGB格式
+                RGB24,  // 24位RGB格式
+                YUV422, // YUV422格式
+                YUV420, // YUV420格式
+                JPEG,   // JPEG压缩格式
                 UNKNOWN
             };
 
@@ -47,10 +47,10 @@ namespace app
              */
             struct FrameBuffer
             {
-                uint8_t*     data;   // 图像数据指针
-                size_t       len;    // 数据长度
-                Resolution   res;    // 分辨率
-                PixelFormat  format; // 像素格式
+                uint8_t*    data;   // 图像数据指针
+                size_t      len;    // 数据长度
+                Resolution  res;    // 分辨率
+                PixelFormat format; // 像素格式
 
                 FrameBuffer() : data(nullptr), len(0), format(PixelFormat::UNKNOWN) {}
 
@@ -81,15 +81,15 @@ namespace app
              */
             struct Config
             {
-                i2c_master_bus_handle_t i2c_handle;    // I2C 总线句柄
-                uint32_t                xclk_freq;     // 外部时钟频率
-                Resolution              resolution;    // 默认分辨率
-                PixelFormat             pixel_format;  // 默认像素格式
-                bool                    auto_detect;   // 是否自动检测传感器
+                i2c_master_bus_handle_t i2c_handle;   // I2C 总线句柄
+                uint32_t                xclk_freq;    // 外部时钟频率
+                Resolution              resolution;   // 默认分辨率
+                PixelFormat             pixel_format; // 默认像素格式
+                bool                    auto_detect;  // 是否自动检测传感器
 
                 Config()
-                    : i2c_handle(nullptr), xclk_freq(config::CAM_XCLK_FREQ),
-                      resolution(240, 240), pixel_format(PixelFormat::RGB565), auto_detect(true)
+                    : i2c_handle(nullptr), xclk_freq(config::CAM_XCLK_FREQ), resolution(240, 240),
+                      pixel_format(PixelFormat::RGB565), auto_detect(true)
                 {
                 }
             };
@@ -177,18 +177,18 @@ namespace app
 
                 // 像素格式转换
                 static PixelFormat toPixelFormat(uint32_t v4l2_fmt);
-                static uint32_t fromPixelFormat(PixelFormat fmt);
+                static uint32_t    fromPixelFormat(PixelFormat fmt);
 
                 // 成员变量
-                Config       config_;
-                bool         initialized_;
-                int          video_fd_;           // V4L2 设备文件描述符
-                bool         streaming_on_;       // 流是否已启动
-                std::string  sensor_name_;        // 传感器名称
+                Config      config_;
+                bool        initialized_;
+                int         video_fd_;     // V4L2 设备文件描述符
+                bool        streaming_on_; // 流是否已启动
+                std::string sensor_name_;  // 传感器名称
 
-                Resolution   current_resolution_; // 当前分辨率
-                PixelFormat  current_format_;     // 当前格式
-                uint32_t     sensor_format_;      // 传感器输出格式 (V4L2格式)
+                Resolution  current_resolution_; // 当前分辨率
+                PixelFormat current_format_;     // 当前格式
+                uint32_t    sensor_format_;      // 传感器输出格式 (V4L2格式)
 
                 // mmap 缓冲区
                 struct MmapBuffer

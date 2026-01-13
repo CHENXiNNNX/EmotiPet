@@ -30,7 +30,7 @@ namespace app
         const gpio_num_t CAM_DVP_D6    = GPIO_NUM_41; // CAMERA_PIN_D6
         const gpio_num_t CAM_DVP_D7    = GPIO_NUM_39; // CAMERA_PIN_D7
         const gpio_num_t CAM_DVP_VSYNC = GPIO_NUM_21; // CAMERA_PIN_VSYNC
-        const gpio_num_t CAM_DVP_DE    = GPIO_NUM_38; // CAMERA_PIN_HREF
+        const gpio_num_t CAM_DVP_HREF  = GPIO_NUM_38; // CAMERA_PIN_HREF
         const gpio_num_t CAM_DVP_PCLK  = GPIO_NUM_11; // CAMERA_PIN_PCLK
         const gpio_num_t CAM_DVP_XCLK  = GPIO_NUM_40; // CAMERA_PIN_XCLK (外部时钟)
         const gpio_num_t CAM_RESET_PIN = GPIO_NUM_NC; // CAMERA_PIN_RESET (-1, 不使用)

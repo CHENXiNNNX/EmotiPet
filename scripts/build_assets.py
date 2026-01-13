@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
-构建 assets.bin，包含自定义唤醒词模型
+构建 assets.bin，支持多种 ESP-SR 模型打包
 
-支持中英文 Multinet 模型打包
+支持的模型类型：
+- WakeNet: 唤醒词检测模型 (wn9_*, wn8_* 等)
+- VADNet: 语音活动检测模型 (vadnet*)
+- NSNet: 噪声抑制模型 (nsnet*)
+- MultiNet: 语音命令识别模型 (mn*_cn, mn*_en 等)
 """
 
 import argparse
@@ -160,53 +164,119 @@ def pack_models(model_path, out_file="srmodels.bin"):
     return True
 
 
-def get_multinet_model_paths(model_names, esp_sr_model_path):
+def detect_model_type(model_name):
     """
-    获取 multinet 模型的完整路径
-    返回有效的模型路径列表
+    自动检测模型类型
+    返回: ('wakenet'|'vadnet'|'nsnet'|'multinet'|'unknown', model_name)
+    """
+    model_name_lower = model_name.lower()
+    
+    if model_name_lower.startswith('wn') or 'wakenet' in model_name_lower:
+        return ('wakenet', model_name)
+    elif model_name_lower.startswith('vadnet') or 'vadn' in model_name_lower:
+        return ('vadnet', model_name)
+    elif model_name_lower.startswith('nsnet') or 'nsn' in model_name_lower:
+        return ('nsnet', model_name)
+    elif model_name_lower.startswith('mn') or 'multinet' in model_name_lower:
+        return ('multinet', model_name)
+    else:
+        return ('unknown', model_name)
+
+
+def get_model_path(model_name, model_type, esp_sr_model_path):
+    """
+    根据模型类型和名称获取完整路径
+    返回模型路径，如果不存在则返回 None
+    """
+    if model_type == 'wakenet':
+        model_path = os.path.join(esp_sr_model_path, 'wakenet_model', model_name)
+    elif model_type == 'vadnet':
+        model_path = os.path.join(esp_sr_model_path, 'vadnet_model', model_name)
+    elif model_type == 'nsnet':
+        model_path = os.path.join(esp_sr_model_path, 'nsnet_model', model_name)
+    elif model_type == 'multinet':
+        model_path = os.path.join(esp_sr_model_path, 'multinet_model', model_name)
+    else:
+        # 尝试作为完整路径
+        if os.path.exists(model_name):
+            return model_name
+        return None
+    
+    if os.path.exists(model_path):
+        return model_path
+    return None
+
+
+def get_model_paths(model_names, esp_sr_model_path):
+    """
+    获取所有模型的完整路径
+    支持自动识别模型类型
+    返回: [(model_type, model_name, model_path), ...]
     """
     if not model_names:
         return []
     
-    valid_paths = []
+    valid_models = []
     for model_name in model_names:
-        multinet_model_path = os.path.join(esp_sr_model_path, 'multinet_model', model_name)
-        if os.path.exists(multinet_model_path):
-            valid_paths.append(multinet_model_path)
-            print(f"找到模型: {model_name}")
+        # 如果是完整路径，直接使用
+        if os.path.isabs(model_name) and os.path.exists(model_name):
+            model_type = 'custom'
+            model_path = model_name
+            print(f"找到自定义模型: {model_path}")
+            valid_models.append((model_type, os.path.basename(model_name), model_path))
+            continue
+        
+        # 自动检测模型类型
+        model_type, clean_name = detect_model_type(model_name)
+        
+        # 获取模型路径
+        model_path = get_model_path(clean_name, model_type, esp_sr_model_path)
+        
+        if model_path:
+            print(f"找到 {model_type} 模型: {clean_name}")
+            valid_models.append((model_type, clean_name, model_path))
         else:
-            print(f"警告: 模型目录不存在: {multinet_model_path}")
+            print(f"警告: 模型不存在: {model_name} (类型: {model_type})")
     
-    return valid_paths
+    return valid_models
 
 
-def get_languages_from_multinet_models(multinet_models):
+def get_languages_from_models(model_list):
     """
-    从模型名称中检测语言
+    从模型列表中检测语言（仅从 multinet 模型）
     返回语言列表，支持多语言（如 ['cn', 'en']）
     """
-    if not multinet_models:
+    if not model_list:
         return []
     
     languages = set()
     cn_indicators = ['_cn', 'cn_']
     en_indicators = ['_en', 'en_']
     
-    for model in multinet_models:
-        if any(indicator in model for indicator in cn_indicators):
-            languages.add('cn')
-        if any(indicator in model for indicator in en_indicators):
-            languages.add('en')
+    for model_type, model_name, _ in model_list:
+        if model_type == 'multinet':
+            if any(indicator in model_name for indicator in cn_indicators):
+                languages.add('cn')
+            if any(indicator in model_name for indicator in en_indicators):
+                languages.add('en')
     
-    return sorted(list(languages)) if languages else ['cn']  # 默认中文
+    return sorted(list(languages)) if languages else []
 
 
-def process_sr_models(multinet_model_dirs, build_dir, assets_dir, esp_sr_model_path):
+def process_sr_models(model_list, build_dir, assets_dir, esp_sr_model_path):
     """
-    处理 SR 模型并生成 srmodels.bin
+    处理所有 SR 模型并生成 srmodels.bin
+    支持 WakeNet、VADNet、NSNet、MultiNet 等多种模型类型
+    
+    参数:
+        model_list: [(model_type, model_name, model_path), ...] 模型列表
+        build_dir: 构建目录
+        assets_dir: assets 目录
+        esp_sr_model_path: ESP-SR 模型根目录
+    
     返回生成的 srmodels.bin 文件名，如果失败则返回 None
     """
-    if not multinet_model_dirs:
+    if not model_list:
         return None
     
     # 创建 SR 模型构建目录
@@ -217,18 +287,20 @@ def process_sr_models(multinet_model_dirs, build_dir, assets_dir, esp_sr_model_p
     
     models_processed = 0
     needs_fst = False
+    multinet_models = []
     
-    # 复制 multinet 模型
-    for multinet_model_dir in multinet_model_dirs:
-        multinet_name = os.path.basename(multinet_model_dir)
-        multinet_dst = os.path.join(sr_models_build_dir, multinet_name)
-        if copy_directory(multinet_model_dir, multinet_dst):
+    # 复制所有模型
+    for model_type, model_name, model_path in model_list:
+        model_dst = os.path.join(sr_models_build_dir, model_name)
+        if copy_directory(model_path, model_dst):
             models_processed += 1
-            print(f"已添加 multinet 模型: {multinet_name}")
+            print(f"已添加 {model_type} 模型: {model_name}")
             
-            # 检查是否需要 fst 模型 (Multinet6/7 需要)
-            if 'mn6' in multinet_name or 'mn7' in multinet_name:
-                needs_fst = True
+            # 记录 multinet 模型，检查是否需要 fst
+            if model_type == 'multinet':
+                multinet_models.append(model_name)
+                if 'mn6' in model_name or 'mn7' in model_name:
+                    needs_fst = True
     
     # 如果使用 Multinet6/7，添加 fst 模型
     if needs_fst:
@@ -253,11 +325,14 @@ def process_sr_models(multinet_model_dirs, build_dir, assets_dir, esp_sr_model_p
         if pack_models(sr_models_build_dir, "srmodels.bin"):
             # 复制 srmodels.bin 到 assets 目录
             copy_file(srmodels_output, os.path.join(assets_dir, "srmodels.bin"))
+            print(f"成功打包 {models_processed} 个模型到 srmodels.bin")
             return "srmodels.bin"
         else:
             return None
     except Exception as e:
         print(f"错误: 生成 srmodels.bin 失败: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -361,18 +436,20 @@ def pack_assets_simple(target_path, include_path, out_file, assets_path, max_nam
     return True
 
 
-def build_assets(multinet_model_names, esp_sr_model_path, output_path, 
+def build_assets(model_names, esp_sr_model_path, output_path, 
                  cn_wake_word=None, en_wake_word=None, threshold=0.2):
     """
-    构建 assets.bin
+    构建 assets.bin，支持多种模型类型
     
     参数:
-        multinet_model_names: 模型名称列表，如 ['mn6_cn', 'mn6_en']
+        model_names: 模型名称列表，支持自动识别类型
+                    例如: ['wn9_nihaoxiaozhi', 'vadnet1_medium', 'nsnet1', 'mn6_cn']
+                    或完整路径: ['/path/to/model']
         esp_sr_model_path: ESP-SR 模型目录路径
         output_path: 输出 assets.bin 的路径
-        cn_wake_word: 中文唤醒词（可选）
-        en_wake_word: 英文唤醒词（可选）
-        threshold: 检测阈值（0.0-1.0）
+        cn_wake_word: 中文唤醒词（可选，仅用于 multinet）
+        en_wake_word: 英文唤醒词（可选，仅用于 multinet）
+        threshold: 检测阈值（0.0-1.0，仅用于 multinet）
     """
     # 创建临时构建目录
     temp_build_dir = os.path.join(os.path.dirname(output_path), "temp_build")
@@ -385,63 +462,71 @@ def build_assets(multinet_model_names, esp_sr_model_path, output_path,
         ensure_dir(temp_build_dir)
         ensure_dir(assets_dir)
         
+        print("=" * 60)
         print("开始构建 assets...")
+        print("=" * 60)
         
-        # 获取模型路径
-        multinet_model_paths = get_multinet_model_paths(multinet_model_names, esp_sr_model_path)
-        if not multinet_model_paths:
-            print("错误: 没有找到有效的 multinet 模型")
+        # 获取所有模型路径（自动识别类型）
+        model_list = get_model_paths(model_names, esp_sr_model_path)
+        if not model_list:
+            print("错误: 没有找到任何有效的模型")
             return False
         
+        # 显示找到的模型
+        print(f"\n找到 {len(model_list)} 个模型:")
+        for model_type, model_name, _ in model_list:
+            print(f"  - {model_type}: {model_name}")
+        
         # 处理 SR 模型，生成 srmodels.bin
-        srmodels = process_sr_models(multinet_model_paths, temp_build_dir, assets_dir, esp_sr_model_path)
+        srmodels = process_sr_models(model_list, temp_build_dir, assets_dir, esp_sr_model_path)
         if not srmodels:
             print("错误: 生成 srmodels.bin 失败")
             return False
         
-        # 检测语言
-        languages = get_languages_from_multinet_models(multinet_model_names)
-        print(f"检测到语言: {', '.join(languages)}")
+        # 检测语言（仅从 multinet 模型）
+        multinet_models = [name for model_type, name, _ in model_list if model_type == 'multinet']
+        languages = get_languages_from_models(model_list)
         
-        # 构建 multinet_model 配置
-        multinet_model_info = {
-            "languages": languages,
-            "duration": 3000,  # 默认持续时间（毫秒）
-            "threshold": threshold,
-            "commands": {}
-        }
-        
-        # 添加中文命令词（仅在明确指定时添加）
-        if 'cn' in languages and cn_wake_word and cn_wake_word.strip():
-            multinet_model_info["commands"]["cn"] = [
-                {
-                    "command": cn_wake_word,
-                    "text": cn_wake_word,
-                    "action": "wake"
-                }
-            ]
-            print(f"中文唤醒词: {cn_wake_word}")
-        elif 'cn' in languages:
-            print("提示: 未配置中文唤醒词，可在运行时动态添加")
-        
-        # 添加英文命令词（仅在明确指定时添加）
-        if 'en' in languages and en_wake_word and en_wake_word.strip():
-            multinet_model_info["commands"]["en"] = [
-                {
-                    "command": en_wake_word,
-                    "text": en_wake_word,
-                    "action": "wake"
-                }
-            ]
-            print(f"英文唤醒词: {en_wake_word}")
-        elif 'en' in languages:
-            print("提示: 未配置英文唤醒词，可在运行时动态添加")
-        
-        # 如果没有指定唤醒词，给出警告但不添加默认值
-        # 用户需要在运行时通过代码动态添加唤醒词
-        if not multinet_model_info["commands"]:
-            print("警告: 未指定任何唤醒词，index.json 中将不包含 commands 配置")
-            print("      请在运行时通过 esp_mn_commands_add() 动态添加唤醒词")
+        # 构建 multinet_model 配置（仅当有 multinet 模型时）
+        multinet_model_info = None
+        if multinet_models:
+            print(f"\n检测到 Multinet 模型，语言: {', '.join(languages) if languages else '未知'}")
+            multinet_model_info = {
+                "languages": languages if languages else ['cn'],
+                "duration": 3000,  # 默认持续时间（毫秒）
+                "threshold": threshold,
+                "commands": {}
+            }
+            
+            # 添加中文命令词（仅在明确指定时添加）
+            if 'cn' in languages and cn_wake_word and cn_wake_word.strip():
+                multinet_model_info["commands"]["cn"] = [
+                    {
+                        "command": cn_wake_word,
+                        "text": cn_wake_word,
+                        "action": "wake"
+                    }
+                ]
+                print(f"中文唤醒词: {cn_wake_word}")
+            elif 'cn' in languages:
+                print("提示: 未配置中文唤醒词，可在运行时动态添加")
+            
+            # 添加英文命令词（仅在明确指定时添加）
+            if 'en' in languages and en_wake_word and en_wake_word.strip():
+                multinet_model_info["commands"]["en"] = [
+                    {
+                        "command": en_wake_word,
+                        "text": en_wake_word,
+                        "action": "wake"
+                    }
+                ]
+                print(f"英文唤醒词: {en_wake_word}")
+            elif 'en' in languages:
+                print("提示: 未配置英文唤醒词，可在运行时动态添加")
+            
+            # 如果没有指定唤醒词，给出提示
+            if not multinet_model_info["commands"]:
+                print("提示: 未指定唤醒词，可在运行时通过 esp_mn_commands_add() 动态添加")
         
         # 生成 index.json
         generate_index_json(assets_dir, srmodels, multinet_model_info)
@@ -478,30 +563,71 @@ def build_assets(multinet_model_names, esp_sr_model_path, output_path,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='构建自定义唤醒词 assets.bin')
+    parser = argparse.ArgumentParser(
+        description='构建 assets.bin，支持多种 ESP-SR 模型打包',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用示例:
+  # 打包 VADNet 和 NSNet 模型（用于 AFE）
+  python build_assets.py --esp_sr_model_path ./managed_components/espressif__esp-sr/model \\
+                         --models vadnet1_medium nsnet1 \\
+                         --output assets.bin
+
+  # 打包 Multinet 模型（用于语音命令识别）
+  python build_assets.py --esp_sr_model_path ./managed_components/espressif__esp-sr/model \\
+                         --models mn6_cn mn6_en \\
+                         --cn_wake_word "你好小智" \\
+                         --en_wake_word "hello" \\
+                         --output assets.bin
+
+  # 打包多种模型（VAD + NS + Multinet）
+  python build_assets.py --esp_sr_model_path ./managed_components/espressif__esp-sr/model \\
+                         --models vadnet1_medium nsnet1 mn6_cn \\
+                         --cn_wake_word "你好小智" \\
+                         --output assets.bin
+
+  # 使用完整路径指定自定义模型
+  python build_assets.py --esp_sr_model_path ./managed_components/espressif__esp-sr/model \\
+                         --models /path/to/custom/model \\
+                         --output assets.bin
+
+支持的模型类型（自动识别）:
+  - WakeNet: wn9_*, wn8_* (唤醒词检测)
+  - VADNet: vadnet* (语音活动检测)
+  - NSNet: nsnet* (噪声抑制)
+  - MultiNet: mn*_cn, mn*_en (语音命令识别)
+        """
+    )
     parser.add_argument('--esp_sr_model_path', required=True, 
-                       help='ESP-SR 模型目录路径')
+                       help='ESP-SR 模型目录路径（例如: ./managed_components/espressif__esp-sr/model）')
     parser.add_argument('--output', required=True, 
                        help='输出 assets.bin 的路径')
-    parser.add_argument('--multinet_models', required=True, nargs='+',
-                       help='Multinet 模型名称列表，如 mn6_cn mn6_en')
+    parser.add_argument('--models', required=True, nargs='+',
+                       help='模型名称列表，支持自动识别类型。例如: vadnet1_medium nsnet1 mn6_cn')
     parser.add_argument('--cn_wake_word', default=None,
-                       help='中文唤醒词（可选）')
+                       help='中文唤醒词（可选，仅用于 multinet 模型）')
     parser.add_argument('--en_wake_word', default=None,
-                       help='英文唤醒词（可选）')
+                       help='英文唤醒词（可选，仅用于 multinet 模型）')
     parser.add_argument('--threshold', type=float, default=0.2,
-                       help='检测阈值 (0.0-1.0，默认 0.2)')
+                       help='Multinet 检测阈值 (0.0-1.0，默认 0.2)')
     
     args = parser.parse_args()
     
-    print("构建自定义唤醒词 assets...")
-    print(f"  ESP-SR 模型路径: {args.esp_sr_model_path}")
-    print(f"  Multinet 模型: {', '.join(args.multinet_models)}")
-    print(f"  输出路径: {args.output}")
-    print(f"  阈值: {args.threshold}")
+    print("=" * 60)
+    print("构建 assets.bin")
+    print("=" * 60)
+    print(f"ESP-SR 模型路径: {args.esp_sr_model_path}")
+    print(f"模型列表: {', '.join(args.models)}")
+    print(f"输出路径: {args.output}")
+    if args.cn_wake_word or args.en_wake_word:
+        print(f"唤醒词: CN={args.cn_wake_word}, EN={args.en_wake_word}")
+    if any('mn' in m.lower() or 'multinet' in m.lower() for m in args.models):
+        print(f"Multinet 阈值: {args.threshold}")
+    print("=" * 60)
+    print()
     
     success = build_assets(
-        multinet_model_names=args.multinet_models,
+        model_names=args.models,
         esp_sr_model_path=args.esp_sr_model_path,
         output_path=args.output,
         cn_wake_word=args.cn_wake_word,
@@ -512,7 +638,10 @@ def main():
     if not success:
         sys.exit(1)
     
+    print()
+    print("=" * 60)
     print("构建完成！")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

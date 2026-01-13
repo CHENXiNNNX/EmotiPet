@@ -2,19 +2,27 @@ menu "EmotiPet Assets 配置"
 
     config ENABLE_ASSETS_BUILD
         bool "启用 Assets 构建"
-        default y
+        default n
         help
             启用从 ESP-SR 模型自动构建 assets.bin。
             如果禁用，将不会自动构建 assets.bin。
 
     if ENABLE_ASSETS_BUILD
-        config ASSETS_MULTINET_MODELS
-            string "Multinet 模型列表"
-            default "mn6_cn mn6_en"
+        config ASSETS_MODELS
+            string "模型列表（支持多种类型）"
+            default "vadnet1_medium nsnet1"
             help
-                要包含在 assets.bin 中的 Multinet 模型名称列表（空格分隔）。
-                示例: "mn6_cn mn6_en" 或 "mn7_cn mn7_en"
-                可用模型: mn6_cn, mn6_en, mn7_cn, mn7_en 等
+                要包含在 assets.bin 中的模型名称列表（空格分隔）。
+                支持自动识别模型类型：
+                - WakeNet: wn9_*, wn8_* (唤醒词检测)
+                - VADNet: vadnet* (语音活动检测，用于 AFE)
+                - NSNet: nsnet* (噪声抑制，用于 AFE)
+                - MultiNet: mn*_cn, mn*_en (语音命令识别)
+                
+                示例:
+                - "vadnet1_medium nsnet1" (用于 AFE)
+                - "mn6_cn mn6_en" (用于语音命令识别)
+                - "vadnet1_medium nsnet1 mn6_cn" (混合使用)
 
         config ASSETS_CN_WAKE_WORD
             string "中文唤醒词"

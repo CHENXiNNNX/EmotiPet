@@ -8,6 +8,8 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 
+#include <sstream>
+
 static const char* const TAG = "App";
 
 namespace app
@@ -48,6 +50,12 @@ namespace app
         if (!initProvision())
         {
             ESP_LOGE(TAG, "配网管理器初始化失败");
+            return false;
+        }
+
+        if (!initChatbot("192.168.50.68", 8080, 5, 5, 10000))
+        {
+            ESP_LOGE(TAG, "Chatbot 初始化失败");
             return false;
         }
 
@@ -96,11 +104,11 @@ namespace app
             app::sys::task::TaskManager::delayMs(5000); // 5秒间隔
 
             // 打印系统信息
-            ESP_LOGI(TAG, "================= 系统信息 ===================");
-            logMemoryInfo();
-            logWiFiInfo();
-            logQMI8658AInfo();
-            ESP_LOGI(TAG, "==============================================");
+            // ESP_LOGI(TAG, "================= 系统信息 ===================");
+            // logMemoryInfo();
+            // logWiFiInfo();
+            // logQMI8658AInfo();
+            // ESP_LOGI(TAG, "==============================================");
         }
     }
 
@@ -234,6 +242,42 @@ namespace app
         return true;
     }
 
+    bool App::initChatbot(const std::string& server_host, int server_port, int ping_interval_sec,
+                          int pingpong_timeout_sec, int reconnect_timeout_ms)
+    {
+        // 构建WebSocket URI
+        std::ostringstream uri_stream;
+        uri_stream << "ws://" << server_host << ":" << server_port;
+        std::string server_uri = uri_stream.str();
+
+        ESP_LOGI(TAG, "服务器地址: %s", server_uri.c_str());
+
+        // 配置Chatbot
+        chatbot::Chatbot::Config chatbot_config;
+        chatbot_config.server_uri              = server_uri;
+        chatbot_config.ping_interval_sec       = ping_interval_sec;
+        chatbot_config.pingpong_timeout_sec    = pingpong_timeout_sec;
+        chatbot_config.reconnect_timeout_ms    = reconnect_timeout_ms;
+        chatbot_config.network_timeout_ms      = 10000; // 网络操作超时
+        chatbot_config.disable_auto_reconnect  = false; // 启用自动重连
+        chatbot_config.disable_pingpong_discon = true;  // 关闭自动心跳包
+
+        // 初始化Chatbot
+        if (!chatbot_.init(chatbot_config))
+        {
+            ESP_LOGE(TAG, "Chatbot 初始化失败");
+            return false;
+        }
+
+        ESP_LOGI(TAG, "Chatbot 初始化成功");
+        return true;
+    }
+
+    chatbot::Chatbot& App::getChatbot()
+    {
+        return chatbot_;
+    }
+
     void App::onProvisionStatus(app::network::ProvisionStatus status)
     {
         // 只记录失败状态
@@ -269,6 +313,22 @@ namespace app
         if (!success)
         {
             ESP_LOGE(TAG, "配网失败: SSID=%s", ssid ? ssid : "未知");
+        }
+
+        ESP_LOGI(TAG, "配网成功: SSID=%s", ssid ? ssid : "未知");
+
+        // WiFi连接成功后，连接WebSocket
+        if (!chatbot_.isConnected())
+        {
+            ESP_LOGI(TAG, "正在连接WebSocket服务器...");
+            if (chatbot_.connect())
+            {
+                ESP_LOGI(TAG, "WebSocket连接请求已发送");
+            }
+            else
+            {
+                ESP_LOGE(TAG, "WebSocket连接请求失败");
+            }
         }
     }
 

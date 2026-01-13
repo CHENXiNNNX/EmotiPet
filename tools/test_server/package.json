@@ -1,0 +1,19 @@
+{
+  "name": "websocket-test-server",
+  "version": "1.0.0",
+  "description": "WebSocket测试服务器 - 支持JPEG、音频和JSON消息",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "websocket",
+    "test",
+    "server"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.14.2"
+  }
+}
