@@ -42,23 +42,23 @@ namespace app
                         return false;
                     }
 
-                    audio_ = audio;
+                    audio_      = audio;
                     frame_size_ = frame_size;
 
                     // 从 Audio 类获取配置信息
                     sample_rate_ = audio_->getInputSampleRate();
-                    channels_ = audio_->getInputChannels();
+                    channels_    = audio_->getInputChannels();
 
                     if (sample_rate_ <= 0 || channels_ <= 0)
                     {
-                        ESP_LOGE(TAG, "无法获取 Audio 配置信息 (采样率=%d, 通道数=%d)", 
-                                sample_rate_, channels_);
+                        ESP_LOGE(TAG, "无法获取 Audio 配置信息 (采样率=%d, 通道数=%d)",
+                                 sample_rate_, channels_);
                         return false;
                     }
 
                     initialized_ = true;
                     ESP_LOGI(TAG, "AudioCapture 初始化成功 (帧大小=%u, 采样率=%d, 通道数=%d)",
-                            (unsigned int)frame_size_, sample_rate_, channels_);
+                             (unsigned int)frame_size_, sample_rate_, channels_);
                     return true;
                 }
 
@@ -68,10 +68,10 @@ namespace app
 
                     std::lock_guard<std::mutex> lock(callbacks_mutex_);
                     callbacks_.clear();
-                    audio_ = nullptr;
+                    audio_       = nullptr;
                     initialized_ = false;
                     sample_rate_ = 0;
-                    channels_ = 0;
+                    channels_    = 0;
 
                     ESP_LOGI(TAG, "AudioCapture 已反初始化");
                 }
@@ -85,28 +85,28 @@ namespace app
                     }
 
                     std::lock_guard<std::mutex> lock(callbacks_mutex_);
-                    
+
                     CallbackInfo info;
                     info.callback_id = next_callback_id_++;
-                    info.callback = callback;
+                    info.callback    = callback;
                     callbacks_.push_back(info);
 
-                    ESP_LOGI(TAG, "注册音频数据回调 (ID=%d, 当前回调数=%u)", 
-                            info.callback_id, (unsigned int)callbacks_.size());
+                    ESP_LOGI(TAG, "注册音频数据回调 (ID=%d, 当前回调数=%u)", info.callback_id,
+                             (unsigned int)callbacks_.size());
                     return info.callback_id;
                 }
 
                 bool AudioCapture::unregisterCallback(int callback_id)
                 {
                     std::lock_guard<std::mutex> lock(callbacks_mutex_);
-                    
+
                     for (auto it = callbacks_.begin(); it != callbacks_.end(); ++it)
                     {
                         if (it->callback_id == callback_id)
                         {
                             callbacks_.erase(it);
-                            ESP_LOGI(TAG, "取消注册音频数据回调 (ID=%d, 剩余回调数=%u)", 
-                                    callback_id, (unsigned int)callbacks_.size());
+                            ESP_LOGI(TAG, "取消注册音频数据回调 (ID=%d, 剩余回调数=%u)",
+                                     callback_id, (unsigned int)callbacks_.size());
                             return true;
                         }
                     }
@@ -139,15 +139,12 @@ namespace app
                     audio_->enableInput(true);
 
                     // 创建采集任务
-                    sys::task::Config task_config = sys::task::Config::createLarge(
-                        "audio_capture", sys::task::Priority::HIGH);
+                    sys::task::Config task_config =
+                        sys::task::Config::createLarge("audio_capture", sys::task::Priority::HIGH);
                     task_config.core_id = 1; // 绑定到核心 1，避免与其他任务冲突
 
-                    capture_task_ = std::make_unique<sys::task::Task>(
-                        captureTask,
-                        task_config,
-                        this
-                    );
+                    capture_task_ =
+                        std::make_unique<sys::task::Task>(captureTask, task_config, this);
 
                     if (!capture_task_)
                     {
@@ -216,10 +213,9 @@ namespace app
 
                     // 分配音频缓冲区
                     // 4 通道：frame_size * 4，8 通道：frame_size * 8
-                    const size_t buffer_size = frame_size_ * channels_;
-                    int16_t* audio_buffer = static_cast<int16_t*>(heap_caps_malloc(
-                        buffer_size * sizeof(int16_t),
-                        MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
+                    const size_t buffer_size  = frame_size_ * channels_;
+                    int16_t*     audio_buffer = static_cast<int16_t*>(heap_caps_malloc(
+                        buffer_size * sizeof(int16_t), MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL));
 
                     if (audio_buffer == nullptr)
                     {
@@ -227,16 +223,18 @@ namespace app
                         return;
                     }
 
-                    ESP_LOGI(TAG, "音频采集任务启动 (缓冲区大小=%u 样本)", (unsigned int)buffer_size);
+                    ESP_LOGI(TAG, "音频采集任务启动 (缓冲区大小=%u 样本)",
+                             (unsigned int)buffer_size);
 
                     uint32_t capture_count = 0;
-                    uint32_t error_count = 0;
+                    uint32_t error_count   = 0;
 
                     // 采集循环
                     while (capturing_)
                     {
                         // 从 Audio 读取数据
-                        int samples_read = audio_->read(audio_buffer, static_cast<int>(frame_size_));
+                        int samples_read =
+                            audio_->read(audio_buffer, static_cast<int>(frame_size_));
 
                         if (samples_read > 0)
                         {
@@ -245,21 +243,21 @@ namespace app
                             // 分发数据给所有注册的回调
                             {
                                 std::lock_guard<std::mutex> lock(callbacks_mutex_);
-                                
+
                                 for (const auto& cb_info : callbacks_)
                                 {
                                     if (cb_info.callback)
                                     {
                                         try
                                         {
-                                            cb_info.callback(audio_buffer, 
-                                                           static_cast<size_t>(samples_read),
-                                                           channels_,
-                                                           sample_rate_);
+                                            cb_info.callback(audio_buffer,
+                                                             static_cast<size_t>(samples_read),
+                                                             channels_, sample_rate_);
                                         }
                                         catch (...)
                                         {
-                                            ESP_LOGE(TAG, "回调函数执行异常 (ID=%d)", cb_info.callback_id);
+                                            ESP_LOGE(TAG, "回调函数执行异常 (ID=%d)",
+                                                     cb_info.callback_id);
                                         }
                                     }
                                 }
@@ -270,19 +268,20 @@ namespace app
                             {
                                 std::lock_guard<std::mutex> lock(callbacks_mutex_);
                                 ESP_LOGD(TAG, "采集统计: 成功=%lu, 错误=%lu, 回调数=%u",
-                                        capture_count, error_count, (unsigned int)callbacks_.size());
+                                         capture_count, error_count,
+                                         (unsigned int)callbacks_.size());
                             }
                         }
                         else
                         {
                             error_count++;
-                            
+
                             // 如果连续失败，稍作延迟
                             if (error_count % 100 == 0)
                             {
                                 ESP_LOGW(TAG, "音频读取失败次数: %lu", error_count);
                             }
-                            
+
                             vTaskDelay(pdMS_TO_TICKS(10));
                         }
 
@@ -299,4 +298,3 @@ namespace app
         } // namespace audio
     } // namespace media
 } // namespace app
-

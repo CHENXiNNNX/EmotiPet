@@ -10,7 +10,8 @@
 static const char* const TAG = "Main";
 
 // 音频采集统计
-static struct {
+static struct
+{
     uint32_t callback_count;
     uint32_t total_samples;
     uint32_t playback_count;
@@ -31,8 +32,8 @@ void onAudioData(const int16_t* data, size_t samples, int channels, int sample_r
         // 波束成形：将多通道转换为单声道（用于播放）
         // 方法：所有通道的平均值
         int16_t mono_buffer[160]; // 假设最大帧大小 160
-        size_t mono_samples = samples;
-        
+        size_t  mono_samples = samples;
+
         if (channels > 1)
         {
             // 多通道转单声道
@@ -66,7 +67,8 @@ void onAudioData(const int16_t* data, size_t samples, int channels, int sample_r
     // 每 100 次回调显示一次统计信息
     if (capture_stats.callback_count % 100 == 0)
     {
-        ESP_LOGI(TAG, "音频采集回调统计: 回调次数=%lu, 总样本数=%lu, 播放次数=%lu, "
+        ESP_LOGI(TAG,
+                 "音频采集回调统计: 回调次数=%lu, 总样本数=%lu, 播放次数=%lu, "
                  "通道数=%d, 采样率=%d Hz",
                  capture_stats.callback_count, capture_stats.total_samples,
                  capture_stats.playback_count, channels, sample_rate);
@@ -92,7 +94,7 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // 初始化 I2C
-    app::i2c::I2c i2c;
+    app::i2c::I2c    i2c;
     app::i2c::Config i2c_cfg;
     i2c_cfg.port    = I2C_NUM_1;
     i2c_cfg.sda_pin = GPIO_NUM_17;
@@ -154,7 +156,7 @@ extern "C" void app_main(void)
 
     // 初始化 AudioCapture
     auto& capture = app::media::audio::capture::AudioCapture::getInstance();
-    
+
     if (!capture.init(&audio, 160))
     {
         ESP_LOGE(TAG, "AudioCapture 初始化失败");
@@ -198,13 +200,13 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "回调统计: 总回调次数=%lu, 总样本数=%lu, 播放次数=%lu",
                  capture_stats.callback_count, capture_stats.total_samples,
                  capture_stats.playback_count);
-        
+
         if (capture_stats.callback_count > 0)
         {
-            float avg_samples_per_callback = (float)capture_stats.total_samples / 
-                                            (float)capture_stats.callback_count;
-            float playback_ratio = (float)capture_stats.playback_count / 
-                                  (float)capture_stats.callback_count * 100.0f;
+            float avg_samples_per_callback =
+                (float)capture_stats.total_samples / (float)capture_stats.callback_count;
+            float playback_ratio =
+                (float)capture_stats.playback_count / (float)capture_stats.callback_count * 100.0f;
             ESP_LOGI(TAG, "平均每次回调样本数: %.2f", avg_samples_per_callback);
             ESP_LOGI(TAG, "播放成功率: %.2f%%", playback_ratio);
         }

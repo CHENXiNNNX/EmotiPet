@@ -99,14 +99,14 @@ namespace app
         void logQMI8658AInfo();
 
         // 成员变量
-        i2c::I2c                                    i2c_;
-        device::qmi8658a::Qmi8658a                  qmi8658a_;
-        media::audio::Audio                         audio_;
+        i2c::I2c                                         i2c_;
+        device::qmi8658a::Qmi8658a                       qmi8658a_;
+        media::audio::Audio                              audio_;
         std::unique_ptr<media::audio::process::afe::Afe> afe_;
-        chatbot::Chatbot                            chatbot_;
-        
+        chatbot::Chatbot                                 chatbot_;
+
         // 音频采集相关
-        int afe_callback_id_ = -1;  // AudioCapture 回调 ID
+        int afe_callback_id_ = -1; // AudioCapture 回调 ID
     };
 
 } // namespace app

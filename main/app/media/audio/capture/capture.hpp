@@ -25,12 +25,12 @@ namespace app
                  * @param channels 通道数（4 或 8）
                  * @param sample_rate 采样率
                  */
-                using AudioDataCallback = std::function<void(const int16_t* data, size_t samples, 
+                using AudioDataCallback = std::function<void(const int16_t* data, size_t samples,
                                                              int channels, int sample_rate)>;
 
                 /**
                  * @brief 音频采集管理器
-                 * 
+                 *
                  * 统一管理音频采集，通过回调机制将音频数据分发给多个消费者
                  * 避免多个模块同时调用 audio.read() 导致的资源冲突
                  */
@@ -117,8 +117,8 @@ namespace app
                     }
 
                 private:
-                    AudioCapture()  = default;
-                    ~AudioCapture() = default;
+                    AudioCapture()                               = default;
+                    ~AudioCapture()                              = default;
                     AudioCapture(const AudioCapture&)            = delete;
                     AudioCapture& operator=(const AudioCapture&) = delete;
 
@@ -132,24 +132,24 @@ namespace app
                      */
                     void captureLoop();
 
-                    Audio* audio_ = nullptr;  // Audio 实例指针
-                    size_t frame_size_ = 160; // 每次采集的帧大小
-                    int sample_rate_ = 0;     // 采样率
-                    int channels_ = 0;         // 通道数
+                    Audio* audio_       = nullptr; // Audio 实例指针
+                    size_t frame_size_  = 160;     // 每次采集的帧大小
+                    int    sample_rate_ = 0;       // 采样率
+                    int    channels_    = 0;       // 通道数
 
                     std::unique_ptr<sys::task::Task> capture_task_; // 采集任务
-                    bool initialized_ = false;
-                    bool capturing_ = false;
+                    bool                             initialized_ = false;
+                    bool                             capturing_   = false;
 
                     // 回调管理
                     struct CallbackInfo
                     {
-                        int callback_id;
+                        int               callback_id;
                         AudioDataCallback callback;
                     };
                     std::vector<CallbackInfo> callbacks_;
-                    mutable std::mutex callbacks_mutex_;
-                    int next_callback_id_ = 1; // 回调 ID 计数器
+                    mutable std::mutex        callbacks_mutex_;
+                    int                       next_callback_id_ = 1; // 回调 ID 计数器
                 };
 
             } // namespace capture

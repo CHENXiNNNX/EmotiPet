@@ -42,7 +42,7 @@ namespace app
         {
             ESP_LOGW(TAG, "Assets 初始化失败");
         }
-        
+
         if (!initQMI8658A(getI2CBusHandle()))
         {
             ESP_LOGE(TAG, "QMI8658A 初始化失败");
@@ -259,11 +259,11 @@ namespace app
 
         // 初始化 AudioCapture
         auto& capture = media::audio::capture::AudioCapture::getInstance();
-        
+
         // 帧大小设置为 160（对应 10ms @ 16kHz）
         // 这个值需要与 AFE 等处理模块匹配
         const size_t frame_size = 160;
-        
+
         if (!capture.init(&audio_, frame_size))
         {
             ESP_LOGE(TAG, "AudioCapture 初始化失败");
@@ -275,16 +275,16 @@ namespace app
         // ESP_LOGI(TAG, "  - 采样率: %d Hz", capture.getSampleRate());
         // ESP_LOGI(TAG, "  - 通道数: %d", capture.getChannels());
         // ESP_LOGI(TAG, "  注意: AudioCapture 已初始化，但尚未启动采集");
-        
+
         return true;
     }
 
     bool App::initAfe()
     {
         // 获取 Assets 中的模型列表
-        auto& assets = app::assets::Assets::getInstance();
+        auto&           assets      = app::assets::Assets::getInstance();
         srmodel_list_t* models_list = nullptr;
-        
+
         if (assets.isPartitionValid())
         {
             models_list = assets.getModelsList();
@@ -306,17 +306,17 @@ namespace app
         // 注意：AFE_TYPE_VC 模式只支持单麦克风通道，多通道输入时只会选择第一个通道
         // 对于多麦输入，我们需要先做波束成形，转换为单声道
         media::audio::process::afe::Config afe_config;
-        afe_config.input_format     = "M";                 // 单麦克风
+        afe_config.input_format     = "M"; // 单麦克风
         afe_config.sample_rate      = 16000;
-        afe_config.enable_aec       = false;               // 回声消除
-        afe_config.enable_vad       = true;                // 人声检测
-        afe_config.enable_ns        = false;               // 噪声抑制
-        afe_config.enable_agc       = false;               // 自动增益控制
-        afe_config.vad_mode         = VAD_MODE_0;          // 人声检测模式（0 最宽松，4 最严格）
-        afe_config.vad_min_noise_ms  = 100;                // 最小静音时长（毫秒）
-        afe_config.afe_type          = AFE_TYPE_VC;        // 语音通信模式
-        afe_config.afe_mode          = AFE_MODE_HIGH_PERF; // 高性能模式
-        afe_config.models_list       = models_list;        // 模型列表
+        afe_config.enable_aec       = false;              // 回声消除
+        afe_config.enable_vad       = true;               // 人声检测
+        afe_config.enable_ns        = false;              // 噪声抑制
+        afe_config.enable_agc       = false;              // 自动增益控制
+        afe_config.vad_mode         = VAD_MODE_0;         // 人声检测模式（0 最宽松，4 最严格）
+        afe_config.vad_min_noise_ms = 100;                // 最小静音时长（毫秒）
+        afe_config.afe_type         = AFE_TYPE_VC;        // 语音通信模式
+        afe_config.afe_mode         = AFE_MODE_HIGH_PERF; // 高性能模式
+        afe_config.models_list      = models_list;        // 模型列表
 
         // 创建 AFE 实例
         afe_ = std::make_unique<media::audio::process::afe::Afe>(afe_config);
@@ -335,28 +335,32 @@ namespace app
         // ESP_LOGI(TAG, "  - 采样率: %d Hz", afe_->getSampleRate());
 
         // 设置 AFE 的 VAD 状态回调
-        afe_->setVadStateCallback([](bool is_speaking) {
-            // VAD 状态变化时的处理
-            if (is_speaking)
+        afe_->setVadStateCallback(
+            [](bool is_speaking)
             {
-                ESP_LOGI(TAG, "检测到语音");
-            }
-            // else
-            // {
-            //     ESP_LOGI(TAG, "检测到静音");
-            // }
-        });
+                // VAD 状态变化时的处理
+                if (is_speaking)
+                {
+                    ESP_LOGI(TAG, "检测到语音");
+                }
+                // else
+                // {
+                //     ESP_LOGI(TAG, "检测到静音");
+                // }
+            });
 
         // 设置 AFE 的音频输出回调（处理后的音频）
-        afe_->setAudioOutputCallback([](const int16_t* data, size_t samples) {
-            // 处理后的音频数据可以用于：
-            // 1. 音频上传（OPUS 编码）
-            // 2. 唤醒词检测
-            // 3. 其他音频处理
-            // 这里暂时不处理，后续可以在 handleListen 中启用上传
-            (void)data;
-            (void)samples;
-        });
+        afe_->setAudioOutputCallback(
+            [](const int16_t* data, size_t samples)
+            {
+                // 处理后的音频数据可以用于：
+                // 1. 音频上传（OPUS 编码）
+                // 2. 唤醒词检测
+                // 3. 其他音频处理
+                // 这里暂时不处理，后续可以在 handleListen 中启用上传
+                (void)data;
+                (void)samples;
+            });
 
         return true;
     }
@@ -372,7 +376,7 @@ namespace app
 
         // 获取 AudioCapture 实例
         auto& capture = media::audio::capture::AudioCapture::getInstance();
-        
+
         // 检查 AudioCapture 是否已初始化
         if (capture.getSampleRate() == 0)
         {
@@ -388,91 +392,93 @@ namespace app
         }
 
         // 注册AFE的音频数据回调(不要在此函数中执行耗时操作，避免阻塞音频采集)
-        afe_callback_id_ = capture.registerCallback([this](const int16_t* data, size_t samples, 
-                                                             int channels, int sample_rate) {
-            if (!afe_ || !afe_->isValid())
+        afe_callback_id_ = capture.registerCallback(
+            [this](const int16_t* data, size_t samples, int channels, int sample_rate)
             {
-                return;
-            }
-
-            // 获取 AFE 需要的输入帧大小
-            static size_t afe_feed_size = 0;
-            if (afe_feed_size == 0)
-            {
-                afe_feed_size = afe_->getFeedSize();
-                if (afe_feed_size == 0)
+                if (!afe_ || !afe_->isValid())
                 {
                     return;
                 }
-                ESP_LOGI(TAG, "AFE 输入帧大小: %u 样本", (unsigned int)afe_feed_size);
-            }
 
-            // 波束成形：将多通道转换为单声道（AFE_TYPE_VC 只需要单声道输入）
-            // 所有通道的平均值（简单波束成形）
-            static int16_t mono_buffer[160]; // 单帧缓冲区
-            const size_t mono_samples = (samples < 160) ? samples : 160;
-
-            if (channels > 1)
-            {
-                // 多通道转单声道
-                for (size_t i = 0; i < mono_samples; i++)
+                // 获取 AFE 需要的输入帧大小
+                static size_t afe_feed_size = 0;
+                if (afe_feed_size == 0)
                 {
-                    int32_t sum = 0;
-                    for (int ch = 0; ch < channels; ch++)
+                    afe_feed_size = afe_->getFeedSize();
+                    if (afe_feed_size == 0)
                     {
-                        sum += static_cast<int32_t>(data[(i * channels) + ch]);
+                        return;
                     }
-                    mono_buffer[i] = static_cast<int16_t>(sum / channels);
-                }
-            }
-            else
-            {
-                // 已经是单声道，直接复制
-                for (size_t i = 0; i < mono_samples; i++)
-                {
-                    mono_buffer[i] = data[i];
-                }
-            }
-
-            // 用于累积多帧数据，以满足 AFE 的输入要求
-            static int16_t afe_buffer[512]; // AFE 最大输入帧大小
-            static size_t afe_buffer_pos = 0; // 当前累积位置
-
-            // 将当前帧数据复制到累积缓冲区
-            size_t copy_size = (afe_buffer_pos + mono_samples <= afe_feed_size) ? 
-                               mono_samples : (afe_feed_size - afe_buffer_pos);
-            for (size_t i = 0; i < copy_size; i++)
-            {
-                afe_buffer[afe_buffer_pos + i] = mono_buffer[i];
-            }
-            afe_buffer_pos += copy_size;
-
-            // 当累积到足够的数据时，输入到 AFE
-            if (afe_buffer_pos >= afe_feed_size)
-            {
-                // 输入到 AFE
-                if (afe_->feed(afe_buffer, afe_feed_size))
-                {
-                    // 获取处理结果
-                    afe_->fetch(0); // 0 表示非阻塞
+                    ESP_LOGI(TAG, "AFE 输入帧大小: %u 样本", (unsigned int)afe_feed_size);
                 }
 
-                // 如果还有剩余数据，保留在缓冲区中
-                if (afe_buffer_pos > afe_feed_size)
+                // 波束成形：将多通道转换为单声道（AFE_TYPE_VC 只需要单声道输入）
+                // 所有通道的平均值（简单波束成形）
+                static int16_t mono_buffer[160]; // 单帧缓冲区
+                const size_t   mono_samples = (samples < 160) ? samples : 160;
+
+                if (channels > 1)
                 {
-                    size_t remaining = afe_buffer_pos - afe_feed_size;
-                    for (size_t i = 0; i < remaining; i++)
+                    // 多通道转单声道
+                    for (size_t i = 0; i < mono_samples; i++)
                     {
-                        afe_buffer[i] = afe_buffer[afe_feed_size + i];
+                        int32_t sum = 0;
+                        for (int ch = 0; ch < channels; ch++)
+                        {
+                            sum += static_cast<int32_t>(data[(i * channels) + ch]);
+                        }
+                        mono_buffer[i] = static_cast<int16_t>(sum / channels);
                     }
-                    afe_buffer_pos = remaining;
                 }
                 else
                 {
-                    afe_buffer_pos = 0;
+                    // 已经是单声道，直接复制
+                    for (size_t i = 0; i < mono_samples; i++)
+                    {
+                        mono_buffer[i] = data[i];
+                    }
                 }
-            }
-        });
+
+                // 用于累积多帧数据，以满足 AFE 的输入要求
+                static int16_t afe_buffer[512];    // AFE 最大输入帧大小
+                static size_t  afe_buffer_pos = 0; // 当前累积位置
+
+                // 将当前帧数据复制到累积缓冲区
+                size_t copy_size = (afe_buffer_pos + mono_samples <= afe_feed_size)
+                                       ? mono_samples
+                                       : (afe_feed_size - afe_buffer_pos);
+                for (size_t i = 0; i < copy_size; i++)
+                {
+                    afe_buffer[afe_buffer_pos + i] = mono_buffer[i];
+                }
+                afe_buffer_pos += copy_size;
+
+                // 当累积到足够的数据时，输入到 AFE
+                if (afe_buffer_pos >= afe_feed_size)
+                {
+                    // 输入到 AFE
+                    if (afe_->feed(afe_buffer, afe_feed_size))
+                    {
+                        // 获取处理结果
+                        afe_->fetch(0); // 0 表示非阻塞
+                    }
+
+                    // 如果还有剩余数据，保留在缓冲区中
+                    if (afe_buffer_pos > afe_feed_size)
+                    {
+                        size_t remaining = afe_buffer_pos - afe_feed_size;
+                        for (size_t i = 0; i < remaining; i++)
+                        {
+                            afe_buffer[i] = afe_buffer[afe_feed_size + i];
+                        }
+                        afe_buffer_pos = remaining;
+                    }
+                    else
+                    {
+                        afe_buffer_pos = 0;
+                    }
+                }
+            });
 
         if (afe_callback_id_ < 0)
         {
@@ -498,7 +504,7 @@ namespace app
     void App::stopAudioCapture()
     {
         auto& capture = media::audio::capture::AudioCapture::getInstance();
-        
+
         // 停止采集
         if (capture.isCapturing())
         {
