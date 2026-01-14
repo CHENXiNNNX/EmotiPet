@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "logic/logic.h"
+#include "device/led/led.hpp"
 
 static const char* const TAG = "App";
 
@@ -67,6 +68,13 @@ namespace app
         if (!initM0404(UART_NUM_2, GPIO_NUM_7, GPIO_NUM_15, 115200))
         {
             ESP_LOGW(TAG, "M0404 压力传感器初始化失败（可能未连接）");
+            // 不返回 false，允许其他功能继续
+        }
+
+        // 初始化 LED（可选，未连接时不退出）
+        if (!initLED())
+        {
+            ESP_LOGW(TAG, "LED 初始化失败（可能未连接）");
             // 不返回 false，允许其他功能继续
         }
 
@@ -164,10 +172,10 @@ namespace app
                 [](int pressure_status)
                 {
                     // 只在有压力时才输出日志
-                    if (pressure_status == 1)
-                    {
-                        ESP_LOGI(TAG, "压力状态回调: %d (有压力)", pressure_status);
-                    }
+                    // if (pressure_status == 1)
+                    // {
+                    //     ESP_LOGI(TAG, "压力状态回调: %d (有压力)", pressure_status);
+                    // }
                     // 通过以下方式获取当前压力状态：
                     // int status = m0404_.getCurrentPressureStatus();
                 });
@@ -197,10 +205,10 @@ namespace app
                 [](int touch_status)
                 {
                     // 只在触摸时才输出日志
-                    if (touch_status == 1)
-                    {
-                        ESP_LOGI(TAG, "触摸状态回调: %d (触摸)", touch_status);
-                    }
+                    // if (touch_status == 1)
+                    // {
+                    //     ESP_LOGI(TAG, "触摸状态回调: %d (触摸)", touch_status);
+                    // }
                     // 通过以下方式获取当前触摸状态：
                     // int status = mpr121_.getCurrentTouchStatus();
                 });
@@ -230,10 +238,10 @@ namespace app
                 [this](int motion_status)
                 {
                     // 只在"动了"时才输出日志
-                    if (motion_status == 1)
-                    {
-                        ESP_LOGI(TAG, "运动状态回调: %d (动了)", motion_status);
-                    }
+                    //if (motion_status == 1)
+                    //{
+                    //    ESP_LOGI(TAG, "运动状态回调: %d (动了)", motion_status);
+                    //}
                     // 通过以下方式获取当前运动状态：
                     // int status = qmi8658a_.getCurrentMotionStatus();
                 });
@@ -257,9 +265,15 @@ namespace app
         logic_config_t config = init_logic_config();
         static int zero_streak = 0;
 
+        // 初始化呼吸灯
+        initBreathingLED();
+
         while (true)
         {
             app::sys::task::TaskManager::delayMs(5000); // 5秒间隔
+
+            // 更新呼吸灯颜色（每次使用下一个颜色）
+            updateBreathingLEDColor();
 
             // 打印系统信息
             ESP_LOGI(TAG, "================= 系统信息 ===================");
@@ -437,6 +451,14 @@ namespace app
         return true;
     }
 
+    bool App::initLED()
+    {
+        // LED 初始化实际上在使用时才会初始化 RMT 通道
+        // 这里只是验证配置是否正确
+        ESP_LOGI(TAG, "LED 初始化完成，GPIO: %d", app::config::LED_GPIO);
+        return true;
+    }
+
     bool App::initProvision()
     {
         auto& provision = app::network::ProvisionManager::getInstance();
@@ -521,17 +543,92 @@ namespace app
 
     void App::logQMI8658AInfo()
     {
-        device::qmi8658a::SensorData data;
-        // 读取传感器数据并计算姿态角
-        if (qmi8658a_.read(data, device::qmi8658a::READ_ALL))
-        {
-            ESP_LOGI(TAG, "QMI8658A 加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", data.accel_x,
-                     data.accel_y, data.accel_z);
-            ESP_LOGI(TAG, "QMI8658A 角速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f rad/s", data.gyro_x,
-                     data.gyro_y, data.gyro_z);
-            ESP_LOGI(TAG, "QMI8658A 姿态:   Roll=%+7.1f°  Pitch=%+7.1f°  Yaw=%+7.1f°", data.angle_x,
-                     data.angle_y, data.angle_z);
-        }
+        // 暂时关闭陀螺仪输出信息
+        // device::qmi8658a::SensorData data;
+        // // 读取传感器数据并计算姿态角
+        // if (qmi8658a_.read(data, device::qmi8658a::READ_ALL))  
+        // {
+        //     ESP_LOGI(TAG, "QMI8658A 加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", data.accel_x,
+        //              data.accel_y, data.accel_z);
+        //     ESP_LOGI(TAG, "QMI8658A 角速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f rad/s", data.gyro_x,
+        //              data.gyro_y, data.gyro_z);
+        //     ESP_LOGI(TAG, "QMI8658A 姿态:   Roll=%+7.1f°  Pitch=%+7.1f°  Yaw=%+7.1f°", data.angle_x,
+        //              data.angle_y, data.angle_z);
+        // }
+    }
+
+    void App::blinkLEDWithNextColor()
+    {
+        // 定义颜色数组（彩虹色序列）
+        static const app::device::led::Color color_sequence[] = {
+            app::device::led::Color(255, 0, 0),     // 红色
+            app::device::led::Color(255, 127, 0),   // 橙色
+            app::device::led::Color(255, 255, 0),   // 黄色
+            app::device::led::Color(0, 255, 0),     // 绿色
+            app::device::led::Color(0, 0, 255),     // 蓝色
+            app::device::led::Color(75, 0, 130),    // 靛蓝色
+            app::device::led::Color(148, 0, 211),   // 紫色
+            app::device::led::Color(255, 255, 255), // 白色
+        };
+        static const size_t color_count = sizeof(color_sequence) / sizeof(color_sequence[0]);
+        static size_t color_index = 0;
+
+        // 每5秒亮一次，每次使用不同颜色（两个级联的WS2812同时亮）
+        app::device::led::Color current_color = color_sequence[color_index];
+        app::device::led::Color colors[2] = {
+            current_color, // 第一个LED
+            current_color  // 第二个LED
+        };
+        led_.setColors(app::config::LED_GPIO, colors, 2);
+        app::sys::task::TaskManager::delayMs(1000); // 亮1000ms
+        // 熄灭两个LED
+        colors[0] = app::device::led::Color(0, 0, 0);
+        colors[1] = app::device::led::Color(0, 0, 0);
+        led_.setColors(app::config::LED_GPIO, colors, 2);
+
+        // 切换到下一个颜色（循环）
+        color_index = (color_index + 1) % color_count;
+    }
+
+    void App::initBreathingLED()
+    {
+        // 定义颜色数组（彩虹色序列）
+        static const app::device::led::Color color_sequence[] = {
+            app::device::led::Color(255, 0, 0),     // 红色
+            app::device::led::Color(255, 127, 0),   // 橙色
+            app::device::led::Color(255, 255, 0),   // 黄色
+            app::device::led::Color(0, 255, 0),     // 绿色
+            app::device::led::Color(0, 0, 255),     // 蓝色
+            app::device::led::Color(75, 0, 130),    // 靛蓝色
+            app::device::led::Color(148, 0, 211),   // 紫色
+            app::device::led::Color(255, 255, 255), // 白色
+        };
+
+        // 启动呼吸灯（周期2秒，两个LED，使用第一个颜色）
+        led_.startBreathing(app::config::LED_GPIO, color_sequence[0], 2000, 2);
+    }
+
+    void App::updateBreathingLEDColor()
+    {
+        // 定义颜色数组（彩虹色序列）
+        static const app::device::led::Color color_sequence[] = {
+            app::device::led::Color(255, 0, 0),     // 红色
+            app::device::led::Color(255, 127, 0),   // 橙色
+            app::device::led::Color(255, 255, 0),   // 黄色
+            app::device::led::Color(0, 255, 0),     // 绿色
+            app::device::led::Color(0, 0, 255),     // 蓝色
+            app::device::led::Color(75, 0, 130),    // 靛蓝色
+            app::device::led::Color(148, 0, 211),   // 紫色
+            app::device::led::Color(255, 255, 255), // 白色
+        };
+        static const size_t color_count = sizeof(color_sequence) / sizeof(color_sequence[0]);
+        static size_t color_index = 0;
+
+        // 切换到下一个颜色（循环）
+        color_index = (color_index + 1) % color_count;
+        
+        // 更新呼吸灯颜色（通过更新颜色实现，无需停止重启）
+        led_.updateBreathingColor(color_sequence[color_index]);
     }
 
 } // namespace app

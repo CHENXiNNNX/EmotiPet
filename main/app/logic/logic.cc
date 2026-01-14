@@ -22,7 +22,7 @@ int week(int a, int b, int c, int d, const logic_config_t& config, int& zero_str
     if (value & config.sitive) {
         control |= (1 << 1);  // 对应 sitive
     }
-    if (value & config.extra) {
+    if (value & config.camera) {
         control |= (1 << 0);  // 对应 extra
     }
 
@@ -42,6 +42,15 @@ int week(int a, int b, int c, int d, const logic_config_t& config, int& zero_str
     {
         zero_streak = 0; // 重置连续 0 计数
         ESP_LOGI(tag, "week(%d,%d,%d,%d) -> control: %d", a, b, c, d, control);
+        // 将 control 转化为二进制，分别对应触摸、压力、陀螺仪、光敏、摄像头
+        int touch_status    = (control >> 4) & 0x1;  // bit4: 触摸
+        int pressure_status  = (control >> 3) & 0x1;  // bit3: 压力
+        int gyro_status      = (control >> 2) & 0x1;  // bit2: 陀螺仪
+        int light_status     = (control >> 1) & 0x1;  // bit1: 光敏
+        int camera_status    = (control >> 0) & 0x1;   // bit0: 摄像头
+
+        ESP_LOGI(tag, "模块状态 - 触摸:%d 压力:%d 陀螺仪:%d 光敏:%d 摄像头:%d", 
+                 touch_status, pressure_status, gyro_status, light_status, camera_status);
         return control;
     }
 }

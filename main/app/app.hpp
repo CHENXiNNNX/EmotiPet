@@ -5,6 +5,7 @@
 #include "device/APDS-9930/apds9930.hpp"
 #include "device/mpr121/mpr121.hpp"
 #include "device/pressure/m0404.hpp"
+#include "device/led/led.hpp"
 #include "i2c/i2c.hpp"
 #include "media/audio/audio.hpp"
 #include "network/network.hpp"
@@ -55,6 +56,9 @@ namespace app
         // 初始化 M0404 压力传感器
         bool initM0404(uart_port_t uart_num, gpio_num_t tx_pin, gpio_num_t rx_pin, int baud_rate = 115200);
 
+        // 初始化 LED
+        bool initLED();
+
     private:
         // 初始化 NVS
         bool initNVS();
@@ -92,6 +96,15 @@ namespace app
         // 打印 QMI8658A 信息
         void logQMI8658AInfo();
 
+        // LED闪烁（每次使用下一个颜色）
+        void blinkLEDWithNextColor();
+
+        // 初始化呼吸灯（启动呼吸灯效果）
+        void initBreathingLED();
+
+        // 更新呼吸灯颜色（每次使用下一个颜色）
+        void updateBreathingLEDColor();
+
         // 成员变量
         i2c::I2c                   i2c_;
         device::qmi8658a::Qmi8658a qmi8658a_;
@@ -99,6 +112,7 @@ namespace app
         device::apds9930::APDS9930& apds9930_;
         device::mpr121::MPR121&      mpr121_;
         device::pressure::M0404&     m0404_;
+        device::led::WS2812         led_;
     };
 
 } // namespace app

@@ -44,6 +44,15 @@ namespace app::device::led
         bool setColor(gpio_num_t gpio_num, const Color& color);
 
         /**
+         * @brief 设置多个LED颜色（用于级联的WS2812）
+         * @param gpio_num GPIO引脚号
+         * @param colors 颜色数组
+         * @param count LED数量
+         * @return true 成功，false 失败
+         */
+        bool setColors(gpio_num_t gpio_num, const Color* colors, size_t count);
+
+        /**
          * @brief 开始闪烁功能
          * @param gpio_num GPIO引脚号
          * @return true 成功，false 失败
@@ -74,6 +83,30 @@ namespace app::device::led
             return brightness_;
         }
 
+        /**
+         * @brief 开始呼吸灯效果
+         * @param gpio_num GPIO引脚号
+         * @param color 呼吸灯颜色
+         * @param cycle_ms 一个完整呼吸周期的时间（毫秒），默认2000ms
+         * @param led_count LED数量（用于级联），默认1
+         * @return true 成功，false 失败
+         */
+        bool startBreathing(gpio_num_t gpio_num, const Color& color, uint32_t cycle_ms = 2000, size_t led_count = 1);
+
+        /**
+         * @brief 停止呼吸灯效果
+         * @param gpio_num GPIO引脚号
+         * @return true 成功，false 失败
+         */
+        bool stopBreathing(gpio_num_t gpio_num);
+
+        /**
+         * @brief 更新呼吸灯颜色（运行时动态更新）
+         * @param color 新的呼吸灯颜色
+         * @return true 成功，false 失败（呼吸灯未运行）
+         */
+        bool updateBreathingColor(const Color& color);
+
     private:
         // RMT编码器句柄
         rmt_encoder_handle_t encoder_handle_;
@@ -99,6 +132,18 @@ namespace app::device::led
         // 闪烁任务对象
         std::unique_ptr<app::sys::task::Task> blink_task_;
 
+        // 呼吸灯参数
+        struct BreathingConfig
+        {
+            Color      color;      // 呼吸灯颜色
+            uint32_t   cycle_ms;   // 一个完整呼吸周期的时间（毫秒）
+            size_t     led_count;  // LED数量
+            bool       is_running; // 是否正在运行
+        } breathing_config_;
+
+        // 呼吸灯任务对象
+        std::unique_ptr<app::sys::task::Task> breathing_task_;
+
         // 初始化RMT通道
         bool initRMTChannel(gpio_num_t gpio_num);
 
@@ -108,8 +153,14 @@ namespace app::device::led
         // 发送颜色数据到WS2812
         bool sendColor(const Color& color);
 
+        // 发送多个LED颜色数据到WS2812
+        bool sendColors(const Color* colors, size_t count);
+
         // 闪烁任务函数
         void blinkTaskFunction(void* param);
+
+        // 呼吸灯任务函数
+        void breathingTaskFunction(void* param);
     };
 
 } // namespace app::device::led

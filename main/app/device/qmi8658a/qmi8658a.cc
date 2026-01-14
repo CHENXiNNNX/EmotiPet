@@ -466,14 +466,14 @@ namespace app
                         current_motion_status_ = current_status;
 
                         // 只在"动了"时输出日志
-                        if (has_motion)
-                        {
-                            ESP_LOGI(TAG, "========== QMI8658A 运动数据 ==========");
-                            ESP_LOGI(TAG, "  运动状态: 动了");
-                            ESP_LOGI(TAG, "  加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", 
-                                     data.accel_x, data.accel_y, data.accel_z);
-                            ESP_LOGI(TAG, "==========================================");
-                        }
+                        //if (has_motion)
+                        //{
+                        //    ESP_LOGI(TAG, "========== QMI8658A 运动数据 ==========");
+                        //    ESP_LOGI(TAG, "  运动状态: 动了");
+                        //    ESP_LOGI(TAG, "  加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²", 
+                        //             data.accel_x, data.accel_y, data.accel_z);
+                        //    ESP_LOGI(TAG, "==========================================");
+                        //}
 
                         // 触发回调（只在状态变化时，且只在"动了"时输出）
                         if (last_motion_status != current_status || last_motion_status == -1)
@@ -483,7 +483,7 @@ namespace app
                             // 只在"动了"时才显示状态变化信息和调用回调
                             if (current_status == 1)
                             {
-                                ESP_LOGI(TAG, "运动状态变化: %d (动了)", current_status);
+                                // ESP_LOGI(TAG, "运动状态变化: %d (动了)", current_status);
                                 
                                 // 调用回调函数
                                 if (motion_status_callback_ != nullptr)

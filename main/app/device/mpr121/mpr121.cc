@@ -270,21 +270,22 @@ namespace app
                         bool     is_touched = (touched != 0);
 
                         // 只在有触摸时才输出日志
-                        if (is_touched)
-                        {
-                            ESP_LOGI(TAG, "========== MPR121 触摸数据 [%lu] ==========", (unsigned long)count);
-                            ESP_LOGI(TAG, "  触摸状态: 触摸 (位掩码: 0x%04X)", touched);
-
-                            // 打印每个电极的状态
-                            for (uint8_t i = 0; i < MPR121_ELECTRODE_COUNT; i++)
-                            {
-                                if (touched & (1 << i))
-                                {
-                                    ESP_LOGI(TAG, "  电极 %d: 被触摸", i);
-                                }
-                            }
-                            ESP_LOGI(TAG, "==========================================");
-                        }
+                        // 暂时关闭日志输出
+                        // if (is_touched)
+                        // {
+                        //     ESP_LOGI(TAG, "========== MPR121 触摸数据 [%lu] ==========", (unsigned long)count);
+                        //     ESP_LOGI(TAG, "  触摸状态: 触摸 (位掩码: 0x%04X)", touched);
+                        //
+                        //     // 打印每个电极的状态
+                        //     for (uint8_t i = 0; i < MPR121_ELECTRODE_COUNT; i++)
+                        //     {
+                        //         if (touched & (1 << i))
+                        //         {
+                        //             ESP_LOGI(TAG, "  电极 %d: 被触摸", i);
+                        //         }
+                        //     }
+                        //     ESP_LOGI(TAG, "==========================================");
+                        // }
                     }
                     else if (!read_ok)
                     {
@@ -305,8 +306,8 @@ namespace app
                             // 只在触摸时才显示状态变化信息和调用回调
                             if (current_status == 1)
                             {
-                                ESP_LOGI(TAG, "触摸状态变化: %d (触摸), 位掩码: 0x%04X", 
-                                         current_status, data.touched);
+                                // ESP_LOGI(TAG, "触摸状态变化: %d (触摸), 位掩码: 0x%04X", 
+                                //          current_status, data.touched);
                                 
                                 // 调用回调函数
                                 if (touch_status_callback_ != nullptr)

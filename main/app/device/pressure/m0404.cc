@@ -382,11 +382,11 @@ namespace app
                     {
                         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                        // 判断是否有压力（16个压力值中任何一个>0）
+                        // 判断是否有压力（16个压力值中任何一个>10）
                         bool has_pressure = false;
                         for (size_t i = 0; i < PRESSURE_COUNT; i++)
                         {
-                            if (data.pressures[i] > 0)
+                            if (data.pressures[i] > 30)
                             {
                                 has_pressure = true;
                                 break;
@@ -431,38 +431,39 @@ namespace app
                         if (has_pressure && has_change && has_above_threshold)
                         {
                             // 只显示有压力的传感器，且值大于阈值（5）
-                            bool has_output = false;
-                            for (size_t i = 0; i < PRESSURE_COUNT; i++)
-                            {
-                                // 显示：1) 当前值 > 5，或 2) 值有变化且（当前值或上次值）> 5
-                                bool current_above = data.pressures[i] > 5;
-                                bool last_above = has_last_data && last_pressures[i] > 5;
-                                bool value_changed = has_last_data && data.pressures[i] != last_pressures[i];
-                                
-                                if (current_above || (value_changed && last_above))
-                                {
-                                    if (!has_output)
-                                    {
-                                        ESP_LOGI(TAG, "========== M0404 压力数据 ==========");
-                                        ESP_LOGI(TAG, "  压力状态: 有压力");
-                                        has_output = true;
-                                    }
-                                    if (has_last_data && data.pressures[i] != last_pressures[i])
-                                    {
-                                        ESP_LOGI(TAG, "  传感器[%2lu]: %5u -> %5u", 
-                                                 (unsigned long)i, last_pressures[i], data.pressures[i]);
-                                    }
-                                    else if (data.pressures[i] > 5)
-                                    {
-                                        ESP_LOGI(TAG, "  传感器[%2lu]: %5u", 
-                                                 (unsigned long)i, data.pressures[i]);
-                                    }
-                                }
-                            }
-                            if (has_output)
-                            {
-                                ESP_LOGI(TAG, "==========================================");
-                            }
+                            // 暂时关闭日志输出
+                            // bool has_output = false;
+                            // for (size_t i = 0; i < PRESSURE_COUNT; i++)
+                            // {
+                            //     // 显示：1) 当前值 > 5，或 2) 值有变化且（当前值或上次值）> 5
+                            //     bool current_above = data.pressures[i] > 5;
+                            //     bool last_above = has_last_data && last_pressures[i] > 5;
+                            //     bool value_changed = has_last_data && data.pressures[i] != last_pressures[i];
+                            //     
+                            //     if (current_above || (value_changed && last_above))
+                            //     {
+                            //         if (!has_output)
+                            //         {
+                            //             ESP_LOGI(TAG, "========== M0404 压力数据 ==========");
+                            //             ESP_LOGI(TAG, "  压力状态: 有压力");
+                            //             has_output = true;
+                            //         }
+                            //         if (has_last_data && data.pressures[i] != last_pressures[i])
+                            //         {
+                            //             ESP_LOGI(TAG, "  传感器[%2lu]: %5u -> %5u", 
+                            //                      (unsigned long)i, last_pressures[i], data.pressures[i]);
+                            //         }
+                            //         else if (data.pressures[i] > 5)
+                            //         {
+                            //             ESP_LOGI(TAG, "  传感器[%2lu]: %5u", 
+                            //                      (unsigned long)i, data.pressures[i]);
+                            //         }
+                            //     }
+                            // }
+                            // if (has_output)
+                            // {
+                            //     ESP_LOGI(TAG, "==========================================");
+                            // }
 
                             // 保存当前值
                             last_pressures = data.pressures;
@@ -487,7 +488,7 @@ namespace app
                             // 只在有压力时才显示状态变化信息和调用回调
                             if (current_status == 1)
                             {
-                                ESP_LOGI(TAG, "压力状态变化: %d (有压力)", current_status);
+                                // ESP_LOGI(TAG, "压力状态变化: %d (有压力)", current_status);
                                 
                                 // 调用回调函数
                                 if (pressure_status_callback_ != nullptr)

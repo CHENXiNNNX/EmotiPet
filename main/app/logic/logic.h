@@ -9,7 +9,7 @@ typedef struct
     uint8_t pressure : 4; // 4-bit 压力配置
     uint8_t gyro     : 4; // 4-bit 陀螺仪配置
     uint8_t sitive   : 4; // 4-bit 灵敏度配置
-    uint8_t extra    : 4; // 4-bit 预留/额外配置
+    uint8_t camera    : 4; // 4-bit 预留/额外配置
 } logic_config_t;
 
 // 初始化默认配置
@@ -20,7 +20,7 @@ inline logic_config_t init_logic_config()
     cfg.pressure = 0b0100;
     cfg.gyro     = 0b1100;
     cfg.sitive   = 0b1010;
-    cfg.extra    = 0b0001;
+    cfg.camera   = 0b0001;
     return cfg;
 }
 
