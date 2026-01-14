@@ -19,7 +19,13 @@ extern "C" void app_main(void)
         return;
     }
 
-    Qmi8658a imu;
+    Qmi8658a                      imu;
+    app::device::qmi8658a::Config cfg;
+    cfg.i2c_addr    = QMI8658A_ADDR_LOW;
+    cfg.accel_range = AccelRange::RANGE_8G;
+    cfg.gyro_range  = GyroRange::RANGE_512DPS;
+    cfg.accel_odr   = AccelOdr::ODR_500HZ;
+    cfg.gyro_odr    = GyroOdr::ODR_500HZ;
 
     if (!imu.init(i2c.getBusHandle(), QMI8658A_ADDR_LOW))
     {

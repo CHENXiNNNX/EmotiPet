@@ -38,10 +38,10 @@ namespace app
                 }
             };
 
-            static std::unordered_map<HandlerKey, EventHandler, HandlerKeyHash> g_handlers;
-            static std::mutex                                                   g_handlers_mutex;
-            static std::unordered_set<esp_event_base_t>                         g_registered_bases;
-            static std::unordered_map<esp_event_base_t, size_t> g_base_handler_count;
+            static std::unordered_map<HandlerKey, EventHandler, HandlerKeyHash> s_handlers;
+            static std::mutex                                                   s_handlers_mutex;
+            static std::unordered_set<esp_event_base_t>                         s_registered_bases;
+            static std::unordered_map<esp_event_base_t, size_t> s_base_handler_count;
 
             EventManager::EventManager() : initialized_(false) {}
 
@@ -85,15 +85,15 @@ namespace app
 
                 std::vector<esp_event_base_t> bases;
                 {
-                    std::lock_guard<std::mutex> lock(g_handlers_mutex);
-                    bases.reserve(g_registered_bases.size());
-                    for (const auto& base : g_registered_bases)
+                    std::lock_guard<std::mutex> lock(s_handlers_mutex);
+                    bases.reserve(s_registered_bases.size());
+                    for (const auto& base : s_registered_bases)
                     {
                         bases.push_back(base);
                     }
-                    g_handlers.clear();
-                    g_registered_bases.clear();
-                    g_base_handler_count.clear();
+                    s_handlers.clear();
+                    s_registered_bases.clear();
+                    s_base_handler_count.clear();
                 }
 
                 for (auto base : bases)
@@ -124,11 +124,11 @@ namespace app
 
                 HandlerKey key{event_base, event_id};
 
-                std::lock_guard<std::mutex> lock(g_handlers_mutex);
+                std::lock_guard<std::mutex> lock(s_handlers_mutex);
 
-                bool is_new_handler = (g_handlers.find(key) == g_handlers.end());
+                bool is_new_handler = (s_handlers.find(key) == s_handlers.end());
                 bool need_register_esp_handler =
-                    (g_registered_bases.find(event_base) == g_registered_bases.end());
+                    (s_registered_bases.find(event_base) == s_registered_bases.end());
 
                 if (need_register_esp_handler)
                 {
@@ -140,14 +140,14 @@ namespace app
                         return false;
                     }
 
-                    g_registered_bases.insert(event_base);
+                    s_registered_bases.insert(event_base);
                 }
 
-                g_handlers[key] = handler;
+                s_handlers[key] = handler;
 
                 if (is_new_handler)
                 {
-                    g_base_handler_count[event_base]++;
+                    s_base_handler_count[event_base]++;
                 }
 
                 return true;
@@ -165,18 +165,18 @@ namespace app
 
                 bool need_unregister_esp_handler = false;
                 {
-                    std::lock_guard<std::mutex> lock(g_handlers_mutex);
+                    std::lock_guard<std::mutex> lock(s_handlers_mutex);
 
-                    auto it = g_handlers.find(key);
-                    if (it == g_handlers.end())
+                    auto it = s_handlers.find(key);
+                    if (it == s_handlers.end())
                     {
                         return false;
                     }
 
-                    g_handlers.erase(it);
+                    s_handlers.erase(it);
 
-                    auto count_it = g_base_handler_count.find(event_base);
-                    if (count_it != g_base_handler_count.end())
+                    auto count_it = s_base_handler_count.find(event_base);
+                    if (count_it != s_base_handler_count.end())
                     {
                         if (count_it->second > 1)
                         {
@@ -184,11 +184,11 @@ namespace app
                         }
                         else
                         {
-                            g_base_handler_count.erase(count_it);
-                            if (g_registered_bases.find(event_base) != g_registered_bases.end())
+                            s_base_handler_count.erase(count_it);
+                            if (s_registered_bases.find(event_base) != s_registered_bases.end())
                             {
                                 need_unregister_esp_handler = true;
-                                g_registered_bases.erase(event_base);
+                                s_registered_bases.erase(event_base);
                             }
                         }
                     }
@@ -260,17 +260,17 @@ namespace app
                 EventHandler specific_handler;
                 EventHandler any_handler;
                 {
-                    std::lock_guard<std::mutex> lock(g_handlers_mutex);
+                    std::lock_guard<std::mutex> lock(s_handlers_mutex);
 
-                    auto it = g_handlers.find(key);
-                    if (it != g_handlers.end())
+                    auto it = s_handlers.find(key);
+                    if (it != s_handlers.end())
                     {
                         specific_handler = it->second;
                     }
 
                     HandlerKey any_key{event_base, ESP_EVENT_ANY_ID};
-                    auto       any_it = g_handlers.find(any_key);
-                    if (any_it != g_handlers.end())
+                    auto       any_it = s_handlers.find(any_key);
+                    if (any_it != s_handlers.end())
                     {
                         any_handler = any_it->second;
                     }

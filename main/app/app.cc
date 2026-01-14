@@ -8,6 +8,8 @@
 #include "system/info/info.hpp"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "logic/logic.h"
+#include "device/led/led.hpp"
 
 #include <sstream>
 #include <cstdint>
@@ -41,18 +43,37 @@ namespace app
         if (!initAssets())
         {
             ESP_LOGW(TAG, "Assets 初始化失败");
+            return false;
+        }
+
+        // 初始化 Audio
+        if (!initAudio(getI2CBusHandle(), 16000))
+        {
+            ESP_LOGW(TAG, "Audio 初始化失败");
+            return false;
         }
 
         if (!initQMI8658A(getI2CBusHandle()))
         {
-            ESP_LOGE(TAG, "QMI8658A 初始化失败");
-            return false;
+            ESP_LOGW(TAG, "QMI8658A 初始化失败");
         }
 
-        if (!initAudio(getI2CBusHandle(), 16000))
+        // 初始化 APDS-9930 传感器
+        if (!initAPDS9930(getI2CBusHandle()))
         {
-            ESP_LOGE(TAG, "Audio 初始化失败");
-            return false;
+            ESP_LOGW(TAG, "APDS-9930 初始化失败");
+        }
+
+        // 初始化 MPR121 触摸传感器
+        if (!initMPR121(getI2CBusHandle()))
+        {
+            ESP_LOGW(TAG, "MPR121 触摸传感器初始化失败");
+        }
+
+        // 初始化 M0404 压力传感器
+        if (!initM0404(UART_NUM_2, GPIO_NUM_7, GPIO_NUM_15, 115200))
+        {
+            ESP_LOGW(TAG, "M0404 压力传感器初始化失败");
         }
 
         if (!initAfe())
@@ -88,7 +109,6 @@ namespace app
         auto& wifi      = app::network::wifi::WiFiManager::getInstance();
 
         // wifi.removeCredentials("yf");
-
         if (!wifi.hasSavedCredentials())
         {
             ESP_LOGE(TAG, "没有保存的 WiFi 凭证");
@@ -118,16 +138,167 @@ namespace app
             }
         }
 
+        // 启动 APDS-9930 传感器数据获取
+        if (apds9930_.isInitialized())
+        {
+            // 设置环境光状态回调函数
+            // 当环境光 >= 1500 lux 时，light_status = 1（亮）
+            // 当环境光 < 1500 lux 时，light_status = 0（灭）
+            apds9930_.setLightStatusCallback(
+                [](int light_status)
+                {
+                    const char* status_str = (light_status == 1) ? "亮" : "灭";
+                    ESP_LOGI(TAG, "环境光状态回调: %d (%s)", light_status, status_str);
+                    // 通过以下方式获取当前光状态：
+                    // int status = apds9930_.getCurrentLightStatus();
+                });
+
+            // 启动传感器数据获取
+            if (apds9930_.start())
+            {
+                ESP_LOGI(TAG, "APDS-9930 传感器数据获取已开启");
+                // 启动后台数据采集任务（每5秒采集一次）
+                if (apds9930_.startDataCollection(5000))
+                {
+                    ESP_LOGI(TAG, "APDS-9930 数据采集任务已启动");
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "APDS-9930 数据采集任务启动失败");
+                }
+            }
+            else
+            {
+                ESP_LOGW(TAG, "APDS-9930 启动失败");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "APDS-9930 未初始化，跳过启动");
+        }
+
+        // 启动 M0404 压力传感器数据采集
+        if (m0404_.isInitialized())
+        {
+            // 设置压力状态回调函数
+            // 当有压力时，pressure_status = 1（有压力）
+            // 当无压力时，pressure_status = 0（无压力）
+            m0404_.setPressureStatusCallback(
+                [](int pressure_status)
+                {
+                    // 只在有压力时才输出日志
+                    // if (pressure_status == 1)
+                    // {
+                    //     ESP_LOGI(TAG, "压力状态回调: %d (有压力)", pressure_status);
+                    // }
+                    // 通过以下方式获取当前压力状态：
+                    // int status = m0404_.getCurrentPressureStatus();
+                });
+
+            // 启动后台数据采集任务（每10秒采集一次）
+            if (m0404_.startDataCollection(10000))
+            {
+                ESP_LOGI(TAG, "M0404 压力传感器数据采集任务已启动");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "M0404 压力传感器数据采集任务启动失败");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "M0404 压力传感器未初始化，跳过启动");
+        }
+
+        // 启动 MPR121 触摸传感器数据采集
+        if (mpr121_.isInitialized())
+        {
+            // 设置触摸状态回调函数
+            // 当有触摸时，touch_status = 1（触摸）
+            // 当未触摸时，touch_status = 0（未触摸）
+            mpr121_.setTouchStatusCallback(
+                [](int touch_status)
+                {
+                    // 只在触摸时才输出日志
+                    // if (touch_status == 1)
+                    // {
+                    //     ESP_LOGI(TAG, "触摸状态回调: %d (触摸)", touch_status);
+                    // }
+                    // 通过以下方式获取当前触摸状态：
+                    // int status = mpr121_.getCurrentTouchStatus();
+                });
+
+            // 启动后台数据采集任务（每100ms采集一次）
+            if (mpr121_.startDataCollection(100))
+            {
+                ESP_LOGI(TAG, "MPR121 触摸传感器数据采集任务已启动");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "MPR121 触摸传感器数据采集任务启动失败");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "MPR121 触摸传感器未初始化，跳过启动");
+        }
+
+        // 启动 QMI8658A 陀螺仪数据采集
+        if (qmi8658a_.isInitialized())
+        {
+            // 设置运动状态回调函数
+            // 当加速度变化很大时，motion_status = 1（动了）
+            // 当加速度没变化时，motion_status = 0（没动）
+            qmi8658a_.setMotionStatusCallback(
+                [](int motion_status)
+                {
+                    // 只在"动了"时才输出日志
+                    // if (motion_status == 1)
+                    //{
+                    //    ESP_LOGI(TAG, "运动状态回调: %d (动了)", motion_status);
+                    //}
+                    // 通过以下方式获取当前运动状态：
+                    // int status = qmi8658a_.getCurrentMotionStatus();
+                });
+
+            // 启动后台数据采集任务（每100ms采集一次）
+            if (qmi8658a_.startDataCollection(100))
+            {
+                ESP_LOGI(TAG, "QMI8658A 陀螺仪数据采集任务已启动");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "QMI8658A 陀螺仪数据采集任务启动失败");
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "QMI8658A 陀螺仪未初始化，跳过启动");
+        }
+
+        // 初始化配置和变量
+        logic_config_t config        = initLogicConfig();
+        static int     s_zero_streak = 0;
+
+        // 初始化呼吸灯
+        breathingLED();
+
         while (true)
         {
             app::sys::task::TaskManager::delayMs(5000); // 5秒间隔
 
+            // 更新呼吸灯颜色（每次使用下一个颜色）
+            updateBreathingLEDColor();
+
             // 打印系统信息
-            // ESP_LOGI(TAG, "================= 系统信息 ===================");
+            ESP_LOGI(TAG, "================= 系统信息 ===================");
             // logMemoryInfo();
             // logWiFiInfo();
             // logQMI8658AInfo();
-            // ESP_LOGI(TAG, "==============================================");
+            calculateControl(mpr121_.getCurrentTouchStatus(), m0404_.getCurrentPressureStatus(),
+                             qmi8658a_.getCurrentMotionStatus(), apds9930_.getCurrentLightStatus(),isSpeaking(),
+                             config, s_zero_streak, TAG);
+            ESP_LOGI(TAG, "==============================================");
         }
     }
 
@@ -209,26 +380,6 @@ namespace app
         return i2c_.getBusHandle();
     }
 
-    bool App::initQMI8658A(i2c_master_bus_handle_t i2c_handle)
-    {
-        if (!i2c_handle)
-        {
-            ESP_LOGE(TAG, "I2C 句柄无效");
-            return false;
-        }
-        if (!qmi8658a_.init(i2c_handle, device::qmi8658a::QMI8658A_ADDR_LOW))
-        {
-            ESP_LOGE(TAG, "QMI8658A 初始化失败");
-            return false;
-        }
-        return true;
-    }
-
-    device::qmi8658a::Qmi8658a& App::getQMI8658A()
-    {
-        return qmi8658a_;
-    }
-
     bool App::initAudio(i2c_master_bus_handle_t i2c_handle, int sample_rate)
     {
         if (!i2c_handle)
@@ -279,6 +430,26 @@ namespace app
         return true;
     }
 
+    bool App::initQMI8658A(i2c_master_bus_handle_t i2c_handle)
+    {
+        if (!i2c_handle)
+        {
+            ESP_LOGE(TAG, "I2C 句柄无效");
+            return false;
+        }
+        if (!qmi8658a_.init(i2c_handle, device::qmi8658a::QMI8658A_ADDR_LOW))
+        {
+            ESP_LOGE(TAG, "QMI8658A 初始化失败");
+            return false;
+        }
+        return true;
+    }
+
+    device::qmi8658a::Qmi8658a& App::getQMI8658A()
+    {
+        return qmi8658a_;
+    }
+
     bool App::initAfe()
     {
         // 获取 Assets 中的模型列表
@@ -304,7 +475,7 @@ namespace app
 
         // 配置 AFE
         // 注意：AFE_TYPE_VC 模式只支持单麦克风通道，多通道输入时只会选择第一个通道
-        // 对于多麦输入，我们需要先做波束成形，转换为单声道
+        // 对于多麦输入，需要先做波束成形，转换为单声道
         media::audio::process::afe::Config afe_config;
         afe_config.input_format     = "M"; // 单麦克风
         afe_config.sample_rate      = 16000;
@@ -336,8 +507,11 @@ namespace app
 
         // 设置 AFE 的 VAD 状态回调
         afe_->setVadStateCallback(
-            [](bool is_speaking)
+            [this](bool is_speaking)
             {
+                // 更新 VAD 状态
+                is_speaking_.store(is_speaking, std::memory_order_release);
+
                 // VAD 状态变化时的处理
                 if (is_speaking)
                 {
@@ -401,20 +575,20 @@ namespace app
                 }
 
                 // 获取 AFE 需要的输入帧大小
-                static size_t afe_feed_size = 0;
-                if (afe_feed_size == 0)
+                static size_t s_afe_feed_size = 0;
+                if (s_afe_feed_size == 0)
                 {
-                    afe_feed_size = afe_->getFeedSize();
-                    if (afe_feed_size == 0)
+                    s_afe_feed_size = afe_->getFeedSize();
+                    if (s_afe_feed_size == 0)
                     {
                         return;
                     }
-                    ESP_LOGI(TAG, "AFE 输入帧大小: %u 样本", (unsigned int)afe_feed_size);
+                    ESP_LOGI(TAG, "AFE 输入帧大小: %u 样本", (unsigned int)s_afe_feed_size);
                 }
 
                 // 波束成形：将多通道转换为单声道（AFE_TYPE_VC 只需要单声道输入）
                 // 所有通道的平均值（简单波束成形）
-                static int16_t mono_buffer[160]; // 单帧缓冲区
+                static int16_t s_mono_buffer[160]; // 单帧缓冲区
                 const size_t   mono_samples = (samples < 160) ? samples : 160;
 
                 if (channels > 1)
@@ -427,7 +601,7 @@ namespace app
                         {
                             sum += static_cast<int32_t>(data[(i * channels) + ch]);
                         }
-                        mono_buffer[i] = static_cast<int16_t>(sum / channels);
+                        s_mono_buffer[i] = static_cast<int16_t>(sum / channels);
                     }
                 }
                 else
@@ -435,47 +609,47 @@ namespace app
                     // 已经是单声道，直接复制
                     for (size_t i = 0; i < mono_samples; i++)
                     {
-                        mono_buffer[i] = data[i];
+                        s_mono_buffer[i] = data[i];
                     }
                 }
 
                 // 用于累积多帧数据，以满足 AFE 的输入要求
-                static int16_t afe_buffer[512];    // AFE 最大输入帧大小
-                static size_t  afe_buffer_pos = 0; // 当前累积位置
+                static int16_t s_afe_buffer[512];    // AFE 最大输入帧大小
+                static size_t  s_afe_buffer_pos = 0; // 当前累积位置
 
                 // 将当前帧数据复制到累积缓冲区
-                size_t copy_size = (afe_buffer_pos + mono_samples <= afe_feed_size)
+                size_t copy_size = (s_afe_buffer_pos + mono_samples <= s_afe_feed_size)
                                        ? mono_samples
-                                       : (afe_feed_size - afe_buffer_pos);
+                                       : (s_afe_feed_size - s_afe_buffer_pos);
                 for (size_t i = 0; i < copy_size; i++)
                 {
-                    afe_buffer[afe_buffer_pos + i] = mono_buffer[i];
+                    s_afe_buffer[s_afe_buffer_pos + i] = s_mono_buffer[i];
                 }
-                afe_buffer_pos += copy_size;
+                s_afe_buffer_pos += copy_size;
 
                 // 当累积到足够的数据时，输入到 AFE
-                if (afe_buffer_pos >= afe_feed_size)
+                if (s_afe_buffer_pos >= s_afe_feed_size)
                 {
                     // 输入到 AFE
-                    if (afe_->feed(afe_buffer, afe_feed_size))
+                    if (afe_->feed(s_afe_buffer, s_afe_feed_size))
                     {
                         // 获取处理结果
                         afe_->fetch(0); // 0 表示非阻塞
                     }
 
                     // 如果还有剩余数据，保留在缓冲区中
-                    if (afe_buffer_pos > afe_feed_size)
+                    if (s_afe_buffer_pos > s_afe_feed_size)
                     {
-                        size_t remaining = afe_buffer_pos - afe_feed_size;
+                        size_t remaining = s_afe_buffer_pos - s_afe_feed_size;
                         for (size_t i = 0; i < remaining; i++)
                         {
-                            afe_buffer[i] = afe_buffer[afe_feed_size + i];
+                            s_afe_buffer[i] = s_afe_buffer[s_afe_feed_size + i];
                         }
-                        afe_buffer_pos = remaining;
+                        s_afe_buffer_pos = remaining;
                     }
                     else
                     {
-                        afe_buffer_pos = 0;
+                        s_afe_buffer_pos = 0;
                     }
                 }
             });
@@ -526,6 +700,54 @@ namespace app
         return audio_;
     }
 
+    bool App::initAPDS9930(i2c_master_bus_handle_t i2c_handle)
+    {
+        if (!i2c_handle)
+        {
+            ESP_LOGE(TAG, "I2C 句柄无效");
+            return false;
+        }
+        if (!apds9930_.init(i2c_handle, device::apds9930::APDS9930_I2C_ADDR))
+        {
+            ESP_LOGE(TAG, "APDS-9930 初始化失败");
+            return false;
+        }
+        return true;
+    }
+
+    bool App::initMPR121(i2c_master_bus_handle_t i2c_handle)
+    {
+        if (i2c_handle == nullptr)
+        {
+            ESP_LOGE(TAG, "I2C 总线句柄为空");
+            return false;
+        }
+
+        if (!mpr121_.init(i2c_handle, device::mpr121::MPR121_I2C_ADDR, GPIO_NUM_NC))
+        {
+            ESP_LOGE(TAG, "MPR121 初始化失败");
+            return false;
+        }
+
+        ESP_LOGI(TAG, "MPR121 初始化成功");
+        return true;
+    }
+
+    bool App::isMPR121Initialized() const
+    {
+        return mpr121_.isInitialized();
+    }
+
+    bool App::initM0404(uart_port_t uart_num, gpio_num_t tx_pin, gpio_num_t rx_pin, int baud_rate)
+    {
+        if (!m0404_.init(uart_num, tx_pin, rx_pin, baud_rate))
+        {
+            ESP_LOGE(TAG, "M0404 初始化失败");
+            return false;
+        }
+        return true;
+    }
+
     bool App::initProvision()
     {
         auto& provision = app::network::ProvisionManager::getInstance();
@@ -560,8 +782,8 @@ namespace app
         chatbot_config.pingpong_timeout_sec    = pingpong_timeout_sec;
         chatbot_config.reconnect_timeout_ms    = reconnect_timeout_ms;
         chatbot_config.network_timeout_ms      = 10000; // 网络操作超时
-        chatbot_config.disable_auto_reconnect  = false; // 启用自动重连
-        chatbot_config.disable_pingpong_discon = true;  // 关闭自动心跳包
+        chatbot_config.disable_auto_reconnect  = false; // 自动重连
+        chatbot_config.disable_pingpong_discon = true;  // 心跳包
 
         // 初始化Chatbot
         if (!chatbot_.init(chatbot_config))
@@ -673,6 +895,80 @@ namespace app
             ESP_LOGI(TAG, "QMI8658A 姿态:   Roll=%+7.1f°  Pitch=%+7.1f°  Yaw=%+7.1f°", data.angle_x,
                      data.angle_y, data.angle_z);
         }
+    }
+
+    void App::blinkLED()
+    {
+        // 定义颜色数组
+        static const app::device::led::Color s_color_sequence[] = {
+            app::device::led::Color(255, 0, 0),     // 红色
+            app::device::led::Color(255, 127, 0),   // 橙色
+            app::device::led::Color(255, 255, 0),   // 黄色
+            app::device::led::Color(0, 255, 0),     // 绿色
+            app::device::led::Color(0, 0, 255),     // 蓝色
+            app::device::led::Color(75, 0, 130),    // 靛蓝色
+            app::device::led::Color(148, 0, 211),   // 紫色
+            app::device::led::Color(255, 255, 255), // 白色
+        };
+        static const size_t s_color_count = sizeof(s_color_sequence) / sizeof(s_color_sequence[0]);
+        static size_t       s_color_index = 0;
+
+        // 每5秒亮一次，每次使用不同颜色
+        app::device::led::Color current_color = s_color_sequence[s_color_index];
+        app::device::led::Color colors[2]     = {
+            current_color, // 第一个LED
+            current_color  // 第二个LED
+        };
+        led_.setColors(app::config::LED_GPIO, colors, 2);
+        app::sys::task::TaskManager::delayMs(1000); // 亮1000ms
+        // 熄灭两个LED
+        colors[0] = app::device::led::Color(0, 0, 0);
+        colors[1] = app::device::led::Color(0, 0, 0);
+        led_.setColors(app::config::LED_GPIO, colors, 2);
+
+        // 切换到下一个颜色
+        s_color_index = (s_color_index + 1) % s_color_count;
+    }
+
+    void App::breathingLED()
+    {
+        // 定义颜色数组
+        static const app::device::led::Color s_color_sequence[] = {
+            app::device::led::Color(255, 0, 0),     // 红色
+            app::device::led::Color(255, 127, 0),   // 橙色
+            app::device::led::Color(255, 255, 0),   // 黄色
+            app::device::led::Color(0, 255, 0),     // 绿色
+            app::device::led::Color(0, 0, 255),     // 蓝色
+            app::device::led::Color(75, 0, 130),    // 靛蓝色
+            app::device::led::Color(148, 0, 211),   // 紫色
+            app::device::led::Color(255, 255, 255), // 白色
+        };
+
+        // 启动呼吸灯
+        led_.startBreathing(app::config::LED_GPIO, s_color_sequence[0], 2000, 2);
+    }
+
+    void App::updateBreathingLEDColor()
+    {
+        // 定义颜色数组
+        static const app::device::led::Color s_color_sequence[] = {
+            app::device::led::Color(255, 0, 0),     // 红色
+            app::device::led::Color(255, 127, 0),   // 橙色
+            app::device::led::Color(255, 255, 0),   // 黄色
+            app::device::led::Color(0, 255, 0),     // 绿色
+            app::device::led::Color(0, 0, 255),     // 蓝色
+            app::device::led::Color(75, 0, 130),    // 靛蓝色
+            app::device::led::Color(148, 0, 211),   // 紫色
+            app::device::led::Color(255, 255, 255), // 白色
+        };
+        static const size_t s_color_count = sizeof(s_color_sequence) / sizeof(s_color_sequence[0]);
+        static size_t       s_color_index = 0;
+
+        // 切换到下一个颜色
+        s_color_index = (s_color_index + 1) % s_color_count;
+
+        // 更新呼吸灯颜色
+        led_.updateBreathingColor(s_color_sequence[s_color_index]);
     }
 
 } // namespace app

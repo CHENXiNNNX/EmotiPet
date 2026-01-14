@@ -126,7 +126,7 @@ namespace app
             bool Camera::initDvpDevice()
             {
                 // 配置 DVP 引脚
-                static esp_cam_ctlr_dvp_pin_config_t dvp_pin_config = {
+                static esp_cam_ctlr_dvp_pin_config_t s_dvp_pin_config = {
                     .data_width = CAM_CTLR_DATA_WIDTH_8,
                     .data_io =
                         {
@@ -157,7 +157,7 @@ namespace app
                     .sccb_config = sccb_config,
                     .reset_pin   = app::config::CAM_RESET_PIN,
                     .pwdn_pin    = app::config::CAM_PWDN_PIN,
-                    .dvp_pin     = dvp_pin_config,
+                    .dvp_pin     = s_dvp_pin_config,
                     .xclk_freq   = config_.xclk_freq,
                 };
 

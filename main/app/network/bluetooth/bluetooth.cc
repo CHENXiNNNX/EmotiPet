@@ -16,7 +16,7 @@ namespace app
         {
 
             // 特征回调存储
-            static std::map<NimBLECharacteristic*, CharCallbacks> g_char_callbacks;
+            static std::map<NimBLECharacteristic*, CharCallbacks> s_char_callbacks;
 
             // ==================== NimBLE 回调类 ====================
 
@@ -86,8 +86,8 @@ namespace app
                 void onRead(NimBLECharacteristic* pCharacteristic,
                             NimBLEConnInfo&       connInfo) override
                 {
-                    auto it = g_char_callbacks.find(pCharacteristic);
-                    if (it != g_char_callbacks.end() && it->second.on_read)
+                    auto it = s_char_callbacks.find(pCharacteristic);
+                    if (it != s_char_callbacks.end() && it->second.on_read)
                     {
                         ConnectionInfo info;
                         info.conn_handle = connInfo.getConnHandle();
@@ -107,8 +107,8 @@ namespace app
                 void onWrite(NimBLECharacteristic* pCharacteristic,
                              NimBLEConnInfo&       connInfo) override
                 {
-                    auto it = g_char_callbacks.find(pCharacteristic);
-                    if (it != g_char_callbacks.end() && it->second.on_write)
+                    auto it = s_char_callbacks.find(pCharacteristic);
+                    if (it != s_char_callbacks.end() && it->second.on_write)
                     {
                         ConnectionInfo info;
                         info.conn_handle = connInfo.getConnHandle();
@@ -129,8 +129,8 @@ namespace app
                 void onSubscribe(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo,
                                  uint16_t subValue) override
                 {
-                    auto it = g_char_callbacks.find(pCharacteristic);
-                    if (it != g_char_callbacks.end() && it->second.on_subscribe)
+                    auto it = s_char_callbacks.find(pCharacteristic);
+                    if (it != s_char_callbacks.end() && it->second.on_subscribe)
                     {
                         ConnectionInfo info;
                         info.conn_handle = connInfo.getConnHandle();
@@ -148,8 +148,8 @@ namespace app
                 }
             };
 
-            static ServerCallbacks             g_server_callbacks;
-            static CharacteristicCallbacksImpl g_char_callbacks_impl;
+            static ServerCallbacks             s_server_callbacks;
+            static CharacteristicCallbacksImpl s_char_callbacks_impl;
 
             // ==================== Manager ====================
 
@@ -204,7 +204,7 @@ namespace app
                 }
 
                 stopAdvertising();
-                g_char_callbacks.clear();
+                s_char_callbacks.clear();
 
                 NimBLEDevice::deinit(clear_all);
 
@@ -235,7 +235,7 @@ namespace app
                         ESP_LOGE(TAG, "创建服务器失败");
                         return nullptr;
                     }
-                    server_->setCallbacks(&g_server_callbacks);
+                    server_->setCallbacks(&s_server_callbacks);
                 }
 
                 NimBLEService* svc = server_->createService(uuid);
@@ -267,8 +267,8 @@ namespace app
                     return;
                 }
 
-                g_char_callbacks[chr] = callbacks;
-                chr->setCallbacks(&g_char_callbacks_impl);
+                s_char_callbacks[chr] = callbacks;
+                chr->setCallbacks(&s_char_callbacks_impl);
             }
 
             bool Manager::startService(NimBLEService* service)

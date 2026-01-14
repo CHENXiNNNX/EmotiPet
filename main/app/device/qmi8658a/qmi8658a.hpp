@@ -1,7 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <functional>
 #include <driver/i2c_master.h>
+#include "system/task/task.hpp"
 
 namespace app
 {
@@ -52,6 +55,14 @@ namespace app
                 float angle_x; // Roll 横滚角
                 float angle_y; // Pitch 俯仰角
                 float angle_z; // Yaw 偏航角
+            };
+
+            // 角度数据结构（用于标定和相对角度）
+            struct AngleData
+            {
+                float roll;  // Roll 横滚角（度）
+                float pitch; // Pitch 俯仰角（度）
+                float yaw;   // Yaw 偏航角（度）
             };
 
             /**
@@ -121,6 +132,80 @@ namespace app
                     return initialized_;
                 }
 
+                /**
+                 * @brief 启动后台数据采集任务
+                 * @param interval_ms 采集间隔（毫秒），默认 100ms
+                 * @return true 成功, false 失败
+                 */
+                bool startDataCollection(uint32_t interval_ms = 100);
+
+                /**
+                 * @brief 停止后台数据采集任务
+                 * @return true 成功, false 失败
+                 */
+                bool stopDataCollection();
+
+                /**
+                 * @brief 运动状态回调函数类型
+                 * @param motion_status 0表示没动，1表示动了
+                 */
+                using MotionStatusCallback = std::function<void(int motion_status)>;
+
+                /**
+                 * @brief 设置运动状态回调函数
+                 * @param callback 回调函数，当运动状态变化时调用
+                 * @note 回调函数参数：0表示没动，1表示动了
+                 */
+                void setMotionStatusCallback(MotionStatusCallback callback)
+                {
+                    motion_status_callback_ = callback;
+                }
+
+                /**
+                 * @brief 获取当前运动状态
+                 * @return 0表示没动，1表示动了，-1表示未读取或读取失败
+                 */
+                int getCurrentMotionStatus() const
+                {
+                    return current_motion_status_;
+                }
+
+                /**
+                 * @brief 标定当前姿态作为参考位置（零点）
+                 * @return true 成功, false 失败（传感器未初始化或读取失败）
+                 * @note 标定后，可以使用 getRelativeAngle() 获取相对于参考位置的角度
+                 */
+                bool calibrate();
+
+                /**
+                 * @brief 清除标定（重置参考位置）
+                 */
+                void resetCalibration();
+
+                /**
+                 * @brief 检查是否已标定
+                 * @return true 已标定, false 未标定
+                 */
+                bool isCalibrated() const
+                {
+                    return calibrated_;
+                }
+
+                /**
+                 * @brief 获取当前绝对角度
+                 * @param angle 输出角度数据
+                 * @return true 成功, false 失败
+                 */
+                bool getCurrentAngle(AngleData& angle);
+
+                /**
+                 * @brief 获取相对于参考位置的角度
+                 * @param angle 输出相对角度数据（相对于标定的参考位置）
+                 * @return true 成功, false 失败或未标定
+                 * @note 需要先调用 calibrate() 进行标定
+                 */
+                bool getRelativeAngle(AngleData& angle);
+
             private:
                 // 寄存器地址
                 enum Reg : uint8_t
@@ -156,11 +241,36 @@ namespace app
                 bool                    initialized_ = false;
                 uint8_t                 i2c_addr_    = QMI8658A_ADDR_LOW;
 
+                // 标定相关
+                bool      calibrated_ = false; // 是否已标定
+                AngleData reference_angle_;    // 参考角度（标定时的角度）
+
                 // 量程缩放因子
                 // 4G 加速度计: LSB/g = 8192
                 // 512DPS 陀螺仪: LSB/(dps) = 64
                 static constexpr float ACCEL_SCALE = 9.807f / 8192.0f;   // m/s² per LSB
                 static constexpr float GYRO_SCALE  = 0.0174533f / 64.0f; // rad/s per LSB (π/180/64)
+
+                // 数据采集任务相关
+                void                                  dataCollectionTaskFunction(void* param);
+                std::unique_ptr<app::sys::task::Task> data_collection_task_;
+                uint32_t                              collection_interval_ms_ = 100;
+                bool                                  collection_running_     = false;
+
+                // 运动状态回调函数
+                MotionStatusCallback motion_status_callback_ = nullptr;
+
+                // 当前运动状态：0=没动，1=动了，-1=未初始化
+                int current_motion_status_ = -1;
+
+                // 加速度变化阈值（m/s²），超过此值认为"动了"
+                static constexpr float ACCEL_CHANGE_THRESHOLD = 2.0f; // 2 m/s² 的变化认为有运动
+
+                // 上一次的加速度值（用于检测变化）
+                float last_accel_x_   = 0.0f;
+                float last_accel_y_   = 0.0f;
+                float last_accel_z_   = 0.0f;
+                bool  has_last_accel_ = false;
             };
 
         } // namespace qmi8658a

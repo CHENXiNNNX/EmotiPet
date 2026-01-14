@@ -26,8 +26,8 @@ namespace app
                 void*              user_param;
             };
 
-            static std::unordered_map<TaskHandle_t, std::unique_ptr<TaskStartParam>> g_task_params;
-            static std::mutex g_task_params_mutex;
+            static std::unordered_map<TaskHandle_t, std::unique_ptr<TaskStartParam>> s_task_params;
+            static std::mutex s_task_params_mutex;
 
             Task::Task(TaskFunction function, const Config& config, void* param)
                 : function_(function), config_(config), param_(param), handle_(nullptr),
@@ -47,8 +47,8 @@ namespace app
 
                 TaskHandle_t self = xTaskGetCurrentTaskHandle();
                 {
-                    std::lock_guard<std::mutex> lock(g_task_params_mutex);
-                    g_task_params.erase(self);
+                    std::lock_guard<std::mutex> lock(s_task_params_mutex);
+                    s_task_params.erase(self);
                 }
                 vTaskDelete(nullptr);
             }
@@ -100,9 +100,9 @@ namespace app
                 vTaskSuspend(handle_);
 
                 {
-                    std::lock_guard<std::mutex> lock(g_task_params_mutex);
+                    std::lock_guard<std::mutex> lock(s_task_params_mutex);
                     // 转移所有权到 map
-                    g_task_params[handle_] = std::move(start_param);
+                    s_task_params[handle_] = std::move(start_param);
                 }
 
                 vTaskResume(handle_);
@@ -118,8 +118,8 @@ namespace app
                     vTaskDelete(handle_);
 
                     {
-                        std::lock_guard<std::mutex> lock(g_task_params_mutex);
-                        g_task_params.erase(handle_);
+                        std::lock_guard<std::mutex> lock(s_task_params_mutex);
+                        s_task_params.erase(handle_);
                     }
 
                     handle_  = nullptr;

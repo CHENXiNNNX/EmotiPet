@@ -21,6 +21,7 @@ namespace app
 
             Qmi8658a::~Qmi8658a()
             {
+                stopDataCollection();
                 deinit();
             }
 
@@ -117,6 +118,7 @@ namespace app
                 }
                 bus_handle_  = nullptr;
                 initialized_ = false;
+                calibrated_  = false;
             }
 
             bool Qmi8658a::read(SensorData& data, uint8_t options)
@@ -250,6 +252,264 @@ namespace app
                     i2c_master_transmit_receive(dev_handle_, &reg, 1, buffer, length, 1000);
 
                 return ret == ESP_OK;
+            }
+
+            bool Qmi8658a::calibrate()
+            {
+                if (!initialized_)
+                {
+                    ESP_LOGE(TAG, "传感器未初始化，无法标定");
+                    return false;
+                }
+
+                SensorData data;
+                if (!read(data, READ_ALL))
+                {
+                    ESP_LOGE(TAG, "读取传感器数据失败，无法标定");
+                    return false;
+                }
+
+                // 保存当前角度作为参考位置
+                reference_angle_.roll  = data.angle_x;
+                reference_angle_.pitch = data.angle_y;
+                reference_angle_.yaw   = data.angle_z;
+                calibrated_            = true;
+
+                ESP_LOGI(TAG, "标定完成 - 参考角度: Roll=%.2f° Pitch=%.2f° Yaw=%.2f°",
+                         reference_angle_.roll, reference_angle_.pitch, reference_angle_.yaw);
+
+                return true;
+            }
+
+            void Qmi8658a::resetCalibration()
+            {
+                calibrated_            = false;
+                reference_angle_.roll  = 0.0f;
+                reference_angle_.pitch = 0.0f;
+                reference_angle_.yaw   = 0.0f;
+                ESP_LOGI(TAG, "标定已清除");
+            }
+
+            bool Qmi8658a::getCurrentAngle(AngleData& angle)
+            {
+                if (!initialized_)
+                {
+                    return false;
+                }
+
+                SensorData data;
+                if (!read(data, READ_ALL))
+                {
+                    return false;
+                }
+
+                angle.roll  = data.angle_x;
+                angle.pitch = data.angle_y;
+                angle.yaw   = data.angle_z;
+
+                return true;
+            }
+
+            bool Qmi8658a::getRelativeAngle(AngleData& angle)
+            {
+                if (!initialized_)
+                {
+                    ESP_LOGE(TAG, "传感器未初始化");
+                    return false;
+                }
+
+                if (!calibrated_)
+                {
+                    ESP_LOGW(TAG, "未标定，无法获取相对角度。请先调用 calibrate()");
+                    return false;
+                }
+
+                SensorData data;
+                if (!read(data, READ_ALL))
+                {
+                    return false;
+                }
+
+                // 计算相对于参考位置的角度
+                angle.roll  = data.angle_x - reference_angle_.roll;
+                angle.pitch = data.angle_y - reference_angle_.pitch;
+                angle.yaw   = data.angle_z - reference_angle_.yaw;
+
+                // 将角度归一化到 [-180, 180] 范围
+                auto normalizeAngle = [](float& angle)
+                {
+                    while (angle > 180.0f)
+                        angle -= 360.0f;
+                    while (angle < -180.0f)
+                        angle += 360.0f;
+                };
+
+                normalizeAngle(angle.roll);
+                normalizeAngle(angle.pitch);
+                normalizeAngle(angle.yaw);
+
+                return true;
+            }
+
+            bool Qmi8658a::startDataCollection(uint32_t interval_ms)
+            {
+                if (!initialized_)
+                {
+                    ESP_LOGE(TAG, "传感器未初始化，无法启动数据采集");
+                    return false;
+                }
+
+                // 如果已经在运行，先停止
+                if (collection_running_)
+                {
+                    stopDataCollection();
+                }
+
+                collection_interval_ms_ = interval_ms;
+
+                // 创建数据采集任务
+                app::sys::task::Config task_config;
+                task_config.name       = "qmi8658a_collect";
+                task_config.stack_size = 4096;
+                task_config.priority   = app::sys::task::Priority::NORMAL;
+                task_config.core_id    = -1;
+                task_config.delay_ms   = 0;
+
+                data_collection_task_ =
+                    std::unique_ptr<app::sys::task::Task>(new app::sys::task::Task(
+                        [this](void* param) { this->dataCollectionTaskFunction(param); },
+                        task_config, this));
+
+                if (!data_collection_task_)
+                {
+                    ESP_LOGE(TAG, "创建数据采集任务对象失败");
+                    return false;
+                }
+
+                collection_running_ = true;
+                if (!data_collection_task_->start())
+                {
+                    ESP_LOGE(TAG, "启动数据采集任务失败");
+                    collection_running_ = false;
+                    data_collection_task_.reset();
+                    return false;
+                }
+
+                ESP_LOGI(TAG, "数据采集任务已启动，采集间隔: %lu ms", (unsigned long)interval_ms);
+                return true;
+            }
+
+            bool Qmi8658a::stopDataCollection()
+            {
+                if (!collection_running_)
+                {
+                    return true;
+                }
+
+                // 停止任务
+                collection_running_ = false;
+
+                // 删除任务
+                if (data_collection_task_ != nullptr)
+                {
+                    data_collection_task_->destroy();
+                    data_collection_task_.reset();
+                }
+
+                ESP_LOGI(TAG, "数据采集任务已停止");
+                return true;
+            }
+
+            void Qmi8658a::dataCollectionTaskFunction(void* param)
+            {
+                ESP_LOGI(TAG, "数据采集任务开始运行");
+
+                int last_motion_status = -1; // 上次的运动状态，-1表示未初始化
+
+                while (collection_running_)
+                {
+                    // 读取传感器数据
+                    SensorData data;
+                    if (read(data, READ_SENSOR))
+                    {
+                        // 判断是否有加速度变化
+                        bool has_motion     = false;
+                        int  current_status = -1;
+
+                        if (has_last_accel_)
+                        {
+                            // 计算加速度变化量（三个轴的向量差）
+                            float delta_x = fabsf(data.accel_x - last_accel_x_);
+                            float delta_y = fabsf(data.accel_y - last_accel_y_);
+                            float delta_z = fabsf(data.accel_z - last_accel_z_);
+
+                            // 计算总变化量（欧几里得距离）
+                            float total_change =
+                                sqrtf(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
+
+                            // 如果变化超过阈值，认为"动了"
+                            if (total_change > ACCEL_CHANGE_THRESHOLD)
+                            {
+                                has_motion = true;
+                            }
+                        }
+                        else
+                        {
+                            // 第一次读取，初始化上一次的值
+                            has_last_accel_ = true;
+                        }
+
+                        // 更新上一次的加速度值
+                        last_accel_x_ = data.accel_x;
+                        last_accel_y_ = data.accel_y;
+                        last_accel_z_ = data.accel_z;
+
+                        current_status = has_motion ? 1 : 0;
+                        // 更新当前状态
+                        current_motion_status_ = current_status;
+
+                        // 只在"动了"时输出日志
+                        // if (has_motion)
+                        //{
+                        //    ESP_LOGI(TAG, "========== QMI8658A 运动数据 ==========");
+                        //    ESP_LOGI(TAG, "  运动状态: 动了");
+                        //    ESP_LOGI(TAG, "  加速度: X=%+7.2f  Y=%+7.2f  Z=%+7.2f m/s²",
+                        //             data.accel_x, data.accel_y, data.accel_z);
+                        //    ESP_LOGI(TAG, "==========================================");
+                        //}
+
+                        // 触发回调（只在状态变化时，且只在"动了"时输出）
+                        if (last_motion_status != current_status || last_motion_status == -1)
+                        {
+                            last_motion_status = current_status;
+
+                            // 只在"动了"时才显示状态变化信息和调用回调
+                            if (current_status == 1)
+                            {
+                                // ESP_LOGI(TAG, "运动状态变化: %d (动了)", current_status);
+
+                                // 调用回调函数
+                                if (motion_status_callback_ != nullptr)
+                                {
+                                    motion_status_callback_(current_status);
+                                }
+                            }
+                            else
+                            {
+                                // "没动"时只调用回调，不输出日志
+                                if (motion_status_callback_ != nullptr)
+                                {
+                                    motion_status_callback_(current_status);
+                                }
+                            }
+                        }
+                    }
+
+                    // 等待指定间隔
+                    app::sys::task::TaskManager::delayMs(collection_interval_ms_);
+                }
+
+                ESP_LOGI(TAG, "数据采集任务结束");
             }
 
         } // namespace qmi8658a
