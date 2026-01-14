@@ -236,7 +236,7 @@ extern "C" void app_main(void)
 
     while (true)
     {
-        sys::task::TaskManager::delayMs(pdMS_TO_TICKS(5000)); // 5秒更新一次
+        app::sys::task::TaskManager::delayMs(5000); // 5秒更新一次
 
         counter++;
 

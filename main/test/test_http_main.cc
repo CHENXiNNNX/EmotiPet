@@ -1,11 +1,10 @@
 #include "app/app.hpp"
 #include "app/network/wifi/wifi.hpp"
 #include "app/protocol/http/http.hpp"
+#include "system/task/task.hpp"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "nvs_flash.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 static const char* const TAG = "HTTP_Test";
 
@@ -80,7 +79,7 @@ extern "C" void app_main(void)
     const int max_retries = 60;
     while (!wifi_manager.isConnected() && retry_count < max_retries)
     {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        app::sys::task::TaskManager::delayMs(1000);
         retry_count++;
     }
 
@@ -101,7 +100,7 @@ extern "C" void app_main(void)
         return;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    app::sys::task::TaskManager::delayMs(1000);
 
     app::protocol::http::HttpResponse response;
     if (http_client.get("http://httpbin.org/get", response, 10000))
@@ -113,7 +112,7 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "GET 请求失败");
     }
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    app::sys::task::TaskManager::delayMs(2000);
 
     std::string json_data = R"({"test": "data", "value": 123})";
     response              = app::protocol::http::HttpResponse();
@@ -126,7 +125,7 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "POST 请求失败");
     }
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    app::sys::task::TaskManager::delayMs(2000);
 
     app::protocol::http::HttpRequest request;
     request.url                        = "http://httpbin.org/headers";
@@ -145,7 +144,7 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "完整请求失败");
     }
 
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    app::sys::task::TaskManager::delayMs(2000);
 
     request.url    = "http://httpbin.org/get";
     request.method = app::protocol::http::HttpMethod::GET;
@@ -171,6 +170,6 @@ extern "C" void app_main(void)
 
     while (true)
     {
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        app::sys::task::TaskManager::delayMs(10000);
     }
 }

@@ -1,8 +1,7 @@
 #include "assets/assets.hpp"
+#include "system/task/task.hpp"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 static const char* const TAG = "Main";
 
@@ -150,6 +149,6 @@ extern "C" void app_main(void)
     // 保持程序运行
     while (true)
     {
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        app::sys::task::TaskManager::delayMs(10000);
     }
 }

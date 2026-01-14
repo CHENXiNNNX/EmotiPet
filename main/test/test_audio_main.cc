@@ -1,8 +1,7 @@
 #include "i2c/i2c.hpp"
 #include "media/audio/audio.hpp"
+#include "system/task/task.hpp"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 using namespace app::i2c;
 using namespace app::media::audio;
@@ -95,7 +94,7 @@ extern "C" void app_main(void)
                 }
                 audio.write(output, frames);
             }
-            vTaskDelay(pdMS_TO_TICKS(10));
+            app::sys::task::TaskManager::delayMs(10);
         }
     }
     else
@@ -135,7 +134,7 @@ extern "C" void app_main(void)
                 // 播放融合后的音频
                 audio.write(mic1, n);
             }
-            vTaskDelay(pdMS_TO_TICKS(10));
+            app::sys::task::TaskManager::delayMs(10);
         }
     }
 }

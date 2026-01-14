@@ -46,7 +46,7 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "开始时间: %ld 微秒", (long)start_us);
 
     // 延时 1 秒
-    sys::task::TaskManager::delayMs(pdMS_TO_TICKS(1000));
+    app::sys::task::TaskManager::delayMs(1000);
 
     int64_t end_us     = app::tool::time::uptimeUs();
     int64_t elapsed_us = end_us - start_us;
@@ -72,7 +72,7 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "[%d] 运行时间: %ld ms | Unix: %ld ms", count + 1, (long)current_uptime,
                  (long)current_unix);
 
-        sys::task::TaskManager::delayMs(pdMS_TO_TICKS(2000)); // 延时 2 秒
+        app::sys::task::TaskManager::delayMs(2000); // 延时 2 秒
         count++;
     }
 

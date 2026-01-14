@@ -1,8 +1,7 @@
 #include "i2c/i2c.hpp"
 #include "device/qmi8658a/qmi8658a.hpp"
+#include "system/task/task.hpp"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 static const char* const TAG = "Main";
 
@@ -48,6 +47,6 @@ extern "C" void app_main(void)
             ESP_LOGI(TAG, "========================================\n");
         }
 
-        vTaskDelay(pdMS_TO_TICKS(200)); // 5Hz 更新
+        app::sys::task::TaskManager::delayMs(200); // 5Hz 更新
     }
 }

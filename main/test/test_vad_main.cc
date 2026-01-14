@@ -2,10 +2,10 @@
 #include "media/audio/audio.hpp"
 #include "media/audio/process/afe/afe.hpp"
 #include "assets/assets.hpp"
+#include "system/event/event.hpp"
+#include "system/task/task.hpp"
 #include "esp_log.h"
-#include "freertos/task.h"
 #include "nvs_flash.h"
-#include "esp_event.h"
 #include "esp_heap_caps.h"
 #include <cstddef>
 #include <cstdint>
@@ -66,8 +66,13 @@ extern "C" void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    // 初始化事件循环
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    // 初始化事件系统
+    auto& event_mgr = app::sys::event::EventManager::getInstance();
+    if (!event_mgr.init())
+    {
+        ESP_LOGE(TAG, "事件系统初始化失败");
+        return;
+    }
 
     // 初始化 I2C
     app::i2c::I2c    i2c;
@@ -271,11 +276,11 @@ extern "C" void app_main(void)
         else
         {
             // 如果读取失败，稍作延迟
-            vTaskDelay(pdMS_TO_TICKS(10));
+            app::sys::task::TaskManager::delayMs(10);
         }
 
         // 短暂延迟，避免 CPU 占用过高
-        vTaskDelay(pdMS_TO_TICKS(1));
+        app::sys::task::TaskManager::delayMs(1);
     }
 
     // 清理（实际上不会执行到这里，因为 while(true)）

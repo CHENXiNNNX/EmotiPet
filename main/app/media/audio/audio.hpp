@@ -62,6 +62,46 @@ namespace app
                     return initialized_;
                 }
 
+                /**
+                 * @brief 获取输入采样率
+                 * @return 采样率，未初始化返回 0
+                 */
+                int getInputSampleRate() const
+                {
+                    return initialized_ ? config_.input_sample_rate : 0;
+                }
+
+                /**
+                 * @brief 获取输出采样率
+                 * @return 采样率，未初始化返回 0
+                 */
+                int getOutputSampleRate() const
+                {
+                    return initialized_ ? config_.output_sample_rate : 0;
+                }
+
+                /**
+                 * @brief 检查是否使用参考信号模式
+                 * @return true 如果使用参考信号（8通道），false 如果普通模式（4通道）
+                 */
+                bool isInputReference() const
+                {
+                    return config_.input_reference;
+                }
+
+                /**
+                 * @brief 获取输入通道数
+                 * @return 通道数：4（普通模式）或 8（参考信号模式），未初始化返回 0
+                 */
+                int getInputChannels() const
+                {
+                    if (!initialized_)
+                    {
+                        return 0;
+                    }
+                    return config_.input_reference ? 8 : 4;
+                }
+
             private:
                 void createDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws,
                                           gpio_num_t dout, gpio_num_t din);

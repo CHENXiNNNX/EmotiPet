@@ -147,7 +147,7 @@ extern "C" void app_main(void)
         {
             ESP_LOGI(TAG, "[%d] %s", i + 1, uuid_buffers[i]);
         }
-        sys::task::TaskManager::delayMs(pdMS_TO_TICKS(10)); // 短暂延时
+        app::sys::task::TaskManager::delayMs(10); // 短暂延时
     }
 
     // 验证唯一性

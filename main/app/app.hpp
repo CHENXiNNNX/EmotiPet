@@ -5,7 +5,9 @@
 #include "i2c/i2c.hpp"
 #include "device/qmi8658a/qmi8658a.hpp"
 #include "media/audio/audio.hpp"
+#include "media/audio/process/afe/afe.hpp"
 #include "network/network.hpp"
+#include <memory>
 #include <string>
 
 namespace app
@@ -31,6 +33,12 @@ namespace app
         // 获取 Chatbot 实例
         chatbot::Chatbot& getChatbot();
 
+        // 获取 AFE 实例
+        media::audio::process::afe::Afe* getAfe()
+        {
+            return afe_.get();
+        }
+
     private:
         // 初始化 NVS
         bool initNVS();
@@ -49,6 +57,15 @@ namespace app
 
         // 初始化音频
         bool initAudio(i2c_master_bus_handle_t i2c_handle, int sample_rate = 16000);
+
+        // 初始化 AFE
+        bool initAfe();
+
+        // 启动音频采集并连接 AFE
+        bool startAudioCapture();
+
+        // 停止音频采集
+        void stopAudioCapture();
 
         // 初始化配网管理器
         bool initProvision();
@@ -82,10 +99,14 @@ namespace app
         void logQMI8658AInfo();
 
         // 成员变量
-        i2c::I2c                   i2c_;
-        device::qmi8658a::Qmi8658a qmi8658a_;
-        media::audio::Audio        audio_;
-        chatbot::Chatbot           chatbot_;
+        i2c::I2c                                    i2c_;
+        device::qmi8658a::Qmi8658a                  qmi8658a_;
+        media::audio::Audio                         audio_;
+        std::unique_ptr<media::audio::process::afe::Afe> afe_;
+        chatbot::Chatbot                            chatbot_;
+        
+        // 音频采集相关
+        int afe_callback_id_ = -1;  // AudioCapture 回调 ID
     };
 
 } // namespace app

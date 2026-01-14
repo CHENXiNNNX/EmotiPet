@@ -3,9 +3,8 @@
 #include "media/audio/audio.hpp"
 #include "media/audio/wakeword/wakeword.hpp"
 #include "system/event/event.hpp"
+#include "system/task/task.hpp"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "nvs_flash.h"
 
 static const char* const TAG = "Main";
@@ -36,7 +35,7 @@ void audioTask(void* param)
 
         if (samples <= 0)
         {
-            vTaskDelay(pdMS_TO_TICKS(10));
+            app::sys::task::TaskManager::delayMs(10);
             continue;
         }
 
@@ -44,7 +43,7 @@ void audioTask(void* param)
         g_wakeword->feed(audio_buffer);
         frame_count++;
 
-        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        uint32_t current_time = app::sys::task::TaskManager::getTickCount() * portTICK_PERIOD_MS;
         if (current_time - last_log_time >= 10000)
         {
             float duration = frame_count * feed_size / 16000.0f;
@@ -54,7 +53,7 @@ void audioTask(void* param)
 
         if (!g_wakeword->isRunning())
         {
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            app::sys::task::TaskManager::delayMs(1000);
             g_wakeword->start();
         }
     }
@@ -134,8 +133,8 @@ extern "C" void app_main(void)
     // ========== 3. 硬件初始化 ==========
     ESP_LOGI(TAG, "\n[测试 3] 硬件初始化");
 
-    I2c         i2c;
-    i2c::Config i2c_cfg;
+    I2c              i2c;
+    app::i2c::Config i2c_cfg;
     i2c_cfg.port    = I2C_NUM_1;
     i2c_cfg.sda_pin = GPIO_NUM_17;
     i2c_cfg.scl_pin = GPIO_NUM_18;
@@ -157,7 +156,7 @@ extern "C" void app_main(void)
     audio_cfg.din                = GPIO_NUM_10;
     audio_cfg.dout               = GPIO_NUM_8;
     audio_cfg.pa_pin             = GPIO_NUM_48;
-    audio_cfg.es8389_addr        = ES8389_CODEC_DEFAULT_ADDR;
+    audio_cfg.es8311_addr        = ES8311_CODEC_DEFAULT_ADDR;
     audio_cfg.es7210_addr        = ES7210_CODEC_DEFAULT_ADDR;
 
     static Audio audio;
@@ -273,12 +272,22 @@ extern "C" void app_main(void)
     g_wakeword->start();
 
     // 创建音频处理任务
-    xTaskCreatePinnedToCore(audioTask, "audio_task", 8192, nullptr, 5, nullptr, 1);
+    app::sys::task::Config task_config;
+    task_config.name       = "audio_task";
+    task_config.stack_size = 8192;
+    task_config.priority   = app::sys::task::Priority::NORMAL;
+    task_config.core_id    = 1; // 绑定到核心1
+    app::sys::task::Task audio_task_obj(audioTask, task_config);
+    if (!audio_task_obj.start())
+    {
+        ESP_LOGE(TAG, "音频任务启动失败");
+        return;
+    }
 
     // 主任务保持运行
     while (true)
     {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        app::sys::task::TaskManager::delayMs(1000);
     }
 
     delete g_wakeword;

@@ -4,8 +4,8 @@
 #include "app/media/audio/audio.hpp"
 #include "app/media/audio/process/opus/encode/opus_enc.hpp"
 #include "app/media/audio/process/opus/decode/opus_dec.hpp"
+#include "system/task/task.hpp"
 #include "esp_log.h"
-#include "freertos/task.h"
 
 static const char* const TAG = "OpusTest";
 
@@ -108,7 +108,7 @@ extern "C" void app_main(void)
         int samples = audio.read(pcm_input, frame_samples);
         if (samples <= 0)
         {
-            vTaskDelay(pdMS_TO_TICKS(10));
+            app::sys::task::TaskManager::delayMs(10);
             continue;
         }
 
@@ -156,6 +156,6 @@ extern "C" void app_main(void)
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        app::sys::task::TaskManager::delayMs(10);
     }
 }

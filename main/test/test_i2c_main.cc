@@ -1,7 +1,6 @@
 #include "i2c/i2c.hpp"
+#include "system/task/task.hpp"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 static const char* const TAG = "Main";
 
@@ -23,7 +22,7 @@ extern "C" void app_main(void)
     }
 
     // 等待一下让 I2C 稳定
-    vTaskDelay(pdMS_TO_TICKS(100));
+    app::sys::task::TaskManager::delayMs(100);
 
     // 扫描 I2C 总线
     ESP_LOGI(TAG, "Starting I2C bus scan...");
