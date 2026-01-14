@@ -40,6 +40,7 @@ namespace app
                     ~CustomWakeWord() override;
 
                     bool init(srmodel_list_t* models_list, int sample_rate, int channels) override;
+                    void deinit() override;
                     bool addCommand(const std::string& command, const std::string& text,
                                     const std::string& action = "wake") override;
                     bool removeCommand(const std::string& text) override;
@@ -87,13 +88,7 @@ namespace app
 
                 CustomWakeWord::~CustomWakeWord()
                 {
-                    stop();
-
-                    if (multinet_model_data_ != nullptr && multinet_ != nullptr)
-                    {
-                        multinet_->destroy(multinet_model_data_);
-                        multinet_model_data_ = nullptr;
-                    }
+                    deinit();
                 }
 
                 bool CustomWakeWord::parseMultinetConfig()
@@ -171,9 +166,15 @@ namespace app
                                             {
                                                 action = action_json->valuestring;
                                             }
+                                            std::string cmd_str  = command_json->valuestring;
+                                            std::string text_str = text_json->valuestring;
                                             commands_by_lang_[language_].push_back(
-                                                {command_json->valuestring, text_json->valuestring,
-                                                 action});
+                                                {cmd_str, text_str, action});
+                                            ESP_LOGI(TAG,
+                                                     "解析到命令词: command=\"%s\", text=\"%s\", "
+                                                     "action=\"%s\"",
+                                                     cmd_str.c_str(), text_str.c_str(),
+                                                     action.c_str());
                                         }
                                     }
                                 }
@@ -271,18 +272,62 @@ namespace app
                     // 注册已有的命令词
                     esp_mn_commands_clear();
                     auto& commands = commands_by_lang_[language_];
+                    ESP_LOGI(TAG, "开始注册命令词，共 %u 个", (unsigned int)commands.size());
                     for (size_t i = 0; i < commands.size(); i++)
                     {
+                        ESP_LOGI(TAG, "  命令词[%u]: command=\"%s\", text=\"%s\", action=\"%s\"",
+                                 (unsigned int)(i + 1), commands[i].command.c_str(),
+                                 commands[i].text.c_str(), commands[i].action.c_str());
                         esp_mn_commands_add(static_cast<int>(i + 1), commands[i].command.c_str());
                     }
                     if (!commands.empty())
                     {
                         esp_mn_commands_update();
+                        ESP_LOGI(TAG, "命令词注册完成");
+                    }
+                    else
+                    {
+                        ESP_LOGW(TAG, "警告：没有配置任何命令词！");
                     }
 
-                    ESP_LOGI(TAG, "初始化成功 (模型: %s, 命令词: %zu)", mn_name_, commands.size());
+                    ESP_LOGI(TAG, "初始化成功 (模型: %s, 命令词: %u, 阈值: %.2f, 持续时间: %d ms)",
+                             mn_name_, (unsigned int)commands.size(), threshold_, duration_);
 
                     return true;
+                }
+
+                void CustomWakeWord::deinit()
+                {
+                    // 停止检测
+                    stop();
+
+                    // 销毁 Multinet 模型数据
+                    if (multinet_model_data_ != nullptr && multinet_ != nullptr)
+                    {
+                        multinet_->destroy(multinet_model_data_);
+                        multinet_model_data_ = nullptr;
+                    }
+
+                    // 清空命令词
+                    commands_by_lang_.clear();
+                    esp_mn_commands_clear();
+
+                    // 重置状态变量
+                    multinet_ = nullptr;
+                    models_   = nullptr;
+                    mn_name_  = nullptr;
+
+                    // 重置配置
+                    sample_rate_ = 0;
+                    channels_    = 0;
+                    language_    = "cn";
+                    duration_    = 3000;
+                    threshold_   = 0.2f;
+
+                    // 清空最后检测到的唤醒词
+                    last_detected_wake_word_.clear();
+
+                    ESP_LOGI(TAG, "WakeWord 反初始化完成");
                 }
 
                 bool CustomWakeWord::addCommand(const std::string& command, const std::string& text,
@@ -411,8 +456,8 @@ namespace app
                         esp_mn_commands_update();
                     }
 
-                    ESP_LOGI(TAG, "切换到模型: %s (命令词: %zu)", mn_name_,
-                             it != commands_by_lang_.end() ? it->second.size() : 0);
+                    ESP_LOGI(TAG, "切换到模型: %s (命令词: %u)", mn_name_,
+                             (unsigned int)(it != commands_by_lang_.end() ? it->second.size() : 0));
 
                     // 恢复运行状态
                     if (was_running)
@@ -451,8 +496,18 @@ namespace app
 
                 void CustomWakeWord::feed(const std::vector<int16_t>& data)
                 {
-                    if (!running_ || multinet_ == nullptr || multinet_model_data_ == nullptr ||
-                        data.empty())
+                    if (!running_)
+                    {
+                        return;
+                    }
+
+                    if (multinet_ == nullptr || multinet_model_data_ == nullptr)
+                    {
+                        ESP_LOGW(TAG, "Multinet 未初始化，无法检测");
+                        return;
+                    }
+
+                    if (data.empty())
                     {
                         return;
                     }
@@ -480,22 +535,36 @@ namespace app
                     {
                         esp_mn_results_t* results  = multinet_->get_results(multinet_model_data_);
                         auto&             commands = commands_by_lang_[language_];
+
+                        ESP_LOGI(TAG, "检测到命令词！结果数量: %d",
+                                 results != nullptr ? results->num : 0);
+
                         if (results != nullptr && results->num > 0)
                         {
                             for (int i = 0; i < results->num; i++)
                             {
-                                int command_id = results->command_id[i];
+                                int   command_id = results->command_id[i];
+                                float prob       = results->prob[i];
+
+                                ESP_LOGI(TAG, "  结果[%d]: command_id=%d, 概率=%.2f", i, command_id,
+                                         prob);
+
                                 if (command_id > 0 &&
                                     command_id <= static_cast<int>(commands.size()))
                                 {
                                     const Command& cmd = commands[command_id - 1];
+                                    ESP_LOGI(TAG, "  匹配到命令词: \"%s\"", cmd.text.c_str());
 
                                     if (cmd.action == "wake")
                                     {
                                         last_detected_wake_word_ = cmd.text;
-                                        running_                 = false;
-                                        postWakeWordEvent(cmd, results->prob[i]);
+                                        postWakeWordEvent(cmd, prob);
                                     }
+                                }
+                                else
+                                {
+                                    ESP_LOGW(TAG, "  无效的命令 ID: %d (命令词总数: %u)",
+                                             command_id, (unsigned int)commands.size());
                                 }
                             }
                         }
@@ -503,6 +572,7 @@ namespace app
                     }
                     else if (state == ESP_MN_STATE_TIMEOUT)
                     {
+                        ESP_LOGD(TAG, "检测超时，清理状态");
                         multinet_->clean(multinet_model_data_);
                     }
                 }
@@ -512,7 +582,7 @@ namespace app
     } // namespace media
 } // namespace app
 
-app::media::audio::wakeword::WakeWord* createCustomWakeWord()
+app::media::audio::wakeword::WakeWord* app::media::audio::wakeword::createCustomWakeWord()
 {
-    return new app::media::audio::wakeword::CustomWakeWord();
+    return new CustomWakeWord();
 }

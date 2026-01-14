@@ -3,9 +3,11 @@
 #include "assets/assets.hpp"
 #include "config/config.hpp"
 #include "media/audio/capture/capture.hpp"
+#include "media/audio/wakeword/wakeword.hpp"
 #include "network/wifi/wifi.hpp"
 #include "system/event/event.hpp"
 #include "system/info/info.hpp"
+#include "tool/time/time.hpp"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "logic/logic.h"
@@ -14,6 +16,8 @@
 #include <sstream>
 #include <cstdint>
 #include <cstddef>
+#include <vector>
+#include <cmath>
 
 static const char* const TAG = "App";
 
@@ -46,34 +50,36 @@ namespace app
             return false;
         }
 
-        // 初始化 Audio
-        if (!initAudio(getI2CBusHandle(), 16000))
-        {
-            ESP_LOGW(TAG, "Audio 初始化失败");
-            return false;
-        }
-
         if (!initQMI8658A(getI2CBusHandle()))
         {
             ESP_LOGW(TAG, "QMI8658A 初始化失败");
         }
 
-        // 初始化 APDS-9930 传感器
         if (!initAPDS9930(getI2CBusHandle()))
         {
             ESP_LOGW(TAG, "APDS-9930 初始化失败");
         }
 
-        // 初始化 MPR121 触摸传感器
         if (!initMPR121(getI2CBusHandle()))
         {
             ESP_LOGW(TAG, "MPR121 触摸传感器初始化失败");
         }
 
-        // 初始化 M0404 压力传感器
         if (!initM0404(UART_NUM_2, GPIO_NUM_7, GPIO_NUM_15, 115200))
         {
             ESP_LOGW(TAG, "M0404 压力传感器初始化失败");
+        }
+
+        if (!initProvision())
+        {
+            ESP_LOGE(TAG, "配网管理器初始化失败");
+            return false;
+        }
+
+        if (!initAudio(getI2CBusHandle(), 16000))
+        {
+            ESP_LOGW(TAG, "Audio 初始化失败");
+            return false;
         }
 
         if (!initAfe())
@@ -81,16 +87,9 @@ namespace app
             ESP_LOGW(TAG, "AFE 初始化失败");
         }
 
-        // 启动音频采集并连接 AFE
         if (!startAudioCapture())
         {
             ESP_LOGW(TAG, "启动音频采集失败");
-        }
-
-        if (!initProvision())
-        {
-            ESP_LOGE(TAG, "配网管理器初始化失败");
-            return false;
         }
 
         if (!initChatbot("192.168.50.68", 8080, 5, 5, 10000))
@@ -287,17 +286,25 @@ namespace app
         {
             app::sys::task::TaskManager::delayMs(5000); // 5秒间隔
 
-            // 更新呼吸灯颜色（每次使用下一个颜色）
+            // 更新呼吸灯颜色
             updateBreathingLEDColor();
 
             // 打印系统信息
             ESP_LOGI(TAG, "================= 系统信息 ===================");
-            // logMemoryInfo();
+            logMemoryInfo();
             // logWiFiInfo();
             // logQMI8658AInfo();
-            calculateControl(mpr121_.getCurrentTouchStatus(), m0404_.getCurrentPressureStatus(),
-                             qmi8658a_.getCurrentMotionStatus(), apds9930_.getCurrentLightStatus(),isSpeaking(),
-                             config, s_zero_streak, TAG);
+            int control = calculateControl(
+                mpr121_.getCurrentTouchStatus(), m0404_.getCurrentPressureStatus(),
+                qmi8658a_.getCurrentMotionStatus(), apds9930_.getCurrentLightStatus(), isSpeaking(),
+                config, s_zero_streak, TAG);
+
+            // 如果 control 不为 0，上传传感器数据
+            if (control > 0)
+            {
+                uploadSensorData(static_cast<uint8_t>(control));
+            }
+
             ESP_LOGI(TAG, "==============================================");
         }
     }
@@ -412,7 +419,6 @@ namespace app
         auto& capture = media::audio::capture::AudioCapture::getInstance();
 
         // 帧大小设置为 160（对应 10ms @ 16kHz）
-        // 这个值需要与 AFE 等处理模块匹配
         const size_t frame_size = 160;
 
         if (!capture.init(&audio_, frame_size))
@@ -537,6 +543,223 @@ namespace app
             });
 
         return true;
+    }
+
+    bool App::initWakeWord()
+    {
+        // 检查 Assets 是否已加载
+        auto&           assets      = app::assets::Assets::getInstance();
+        srmodel_list_t* models_list = nullptr;
+
+        if (assets.isPartitionValid())
+        {
+            models_list = assets.getModelsList();
+            if (models_list == nullptr || models_list->num == 0)
+            {
+                ESP_LOGW(TAG, "未加载模型，唤醒词检测将无法使用");
+                return false;
+            }
+        }
+        else
+        {
+            ESP_LOGW(TAG, "Assets 分区无效，唤醒词检测将无法使用");
+            return false;
+        }
+
+        // 创建 WakeWord 实例
+        wakeword_ = std::unique_ptr<media::audio::wakeword::WakeWord>(
+            media::audio::wakeword::createCustomWakeWord());
+
+        if (!wakeword_)
+        {
+            ESP_LOGE(TAG, "创建 WakeWord 实例失败");
+            return false;
+        }
+
+        // 获取音频配置
+        int sample_rate = audio_.getInputSampleRate();
+        int channels    = audio_.getInputChannels();
+
+        // 初始化 WakeWord
+        if (!wakeword_->init(models_list, sample_rate, channels))
+        {
+            ESP_LOGE(TAG, "WakeWord 初始化失败");
+            wakeword_.reset();
+            return false;
+        }
+
+        ESP_LOGI(TAG, "WakeWord 初始化成功");
+        ESP_LOGI(TAG, "  - 采样率: %d Hz", sample_rate);
+        ESP_LOGI(TAG, "  - 通道数: %d", channels);
+        ESP_LOGI(TAG, "  - 输入帧大小: %u 样本", (unsigned int)wakeword_->getFeedSize());
+
+        // 注册唤醒词事件处理器
+        auto& event_mgr = app::sys::event::EventManager::getInstance();
+        event_mgr.registerHandler(
+            media::audio::wakeword::WAKEWORD_EVENT_BASE,
+            media::audio::wakeword::WAKEWORD_EVENT_DETECTED,
+            [](esp_event_base_t event_base, app::sys::event::EventId event_id,
+               const app::sys::event::EventData& event_data)
+            {
+                (void)event_base;
+                (void)event_id;
+
+                if (event_data.data != nullptr &&
+                    event_data.size >= sizeof(media::audio::wakeword::WakeWordEventData))
+                {
+                    const media::audio::wakeword::WakeWordEventData* wake_data =
+                        static_cast<const media::audio::wakeword::WakeWordEventData*>(
+                            event_data.data);
+
+                    ESP_LOGI(TAG, "========== 检测到唤醒词 ==========");
+                    ESP_LOGI(TAG, "  文本: %s", wake_data->text);
+                    ESP_LOGI(TAG, "  命令: %s", wake_data->command);
+                    ESP_LOGI(TAG, "  动作: %s", wake_data->action);
+                    ESP_LOGI(TAG, "  概率: %.2f", wake_data->probability);
+                    ESP_LOGI(TAG, "====================================");
+
+                    // TODO: 处理唤醒词检测后的逻辑
+                    // 例如：启动语音识别、发送通知等
+                }
+            });
+
+        return true;
+    }
+
+    bool App::startWakeWord()
+    {
+        // 检查 WakeWord 是否已初始化
+        if (!wakeword_)
+        {
+            if (!initWakeWord())
+            {
+                ESP_LOGE(TAG, "WakeWord 初始化失败，无法启动");
+                return false;
+            }
+        }
+
+        // 检查是否已经在运行
+        if (wakeword_->isRunning())
+        {
+            ESP_LOGW(TAG, "WakeWord 已在运行");
+            return true;
+        }
+
+        // 获取 AudioCapture 实例
+        auto& capture = media::audio::capture::AudioCapture::getInstance();
+
+        // 检查 AudioCapture 是否已初始化
+        if (capture.getSampleRate() == 0)
+        {
+            ESP_LOGE(TAG, "AudioCapture 未初始化，无法启动唤醒词检测");
+            return false;
+        }
+
+        // 注册唤醒词的音频数据回调(不要在此函数中执行耗时操作，避免阻塞音频采集)
+        wakeword_callback_id_ = capture.registerCallback(
+            [this](const int16_t* data, size_t samples, int channels, int sample_rate)
+            {
+                if (!wakeword_ || !wakeword_->isRunning())
+                {
+                    return;
+                }
+
+                // 获取 WakeWord 需要的输入帧大小
+                static size_t wakeword_feed_size = 0;
+                if (wakeword_feed_size == 0)
+                {
+                    wakeword_feed_size = wakeword_->getFeedSize();
+                    if (wakeword_feed_size == 0)
+                    {
+                        return;
+                    }
+                }
+
+                // 波束成形：将多通道转换为单声道
+                // 所有通道的平均值（简单波束成形）
+                static std::vector<int16_t> wakeword_buffer;
+                wakeword_buffer.clear();
+                wakeword_buffer.reserve(samples);
+
+                if (channels > 1)
+                {
+                    // 多通道转单声道
+                    for (size_t i = 0; i < samples; i++)
+                    {
+                        int32_t sum = 0;
+                        for (int ch = 0; ch < channels; ch++)
+                        {
+                            sum += static_cast<int32_t>(data[(i * channels) + ch]);
+                        }
+                        wakeword_buffer.push_back(static_cast<int16_t>(sum / channels));
+                    }
+                }
+                else
+                {
+                    // 已经是单声道，直接复制
+                    wakeword_buffer.assign(data, data + samples);
+                }
+
+                // 用于累积多帧数据，以满足 WakeWord 的输入要求
+                static std::vector<int16_t> wakeword_accum_buffer;
+
+                // 将当前帧数据添加到累积数据中
+                wakeword_accum_buffer.insert(wakeword_accum_buffer.end(), wakeword_buffer.begin(),
+                                             wakeword_buffer.end());
+
+                // 当累积到足够的数据时，输入到 WakeWord
+                if (wakeword_accum_buffer.size() >= wakeword_feed_size)
+                {
+                    // 输入到 WakeWord
+                    wakeword_->feed(wakeword_accum_buffer);
+
+                    // 如果还有剩余数据，保留在缓冲区中
+                    if (wakeword_accum_buffer.size() > wakeword_feed_size)
+                    {
+                        std::vector<int16_t> remaining_data(wakeword_accum_buffer.begin() +
+                                                                wakeword_feed_size,
+                                                            wakeword_accum_buffer.end());
+                        wakeword_accum_buffer = std::move(remaining_data);
+                    }
+                    else
+                    {
+                        wakeword_accum_buffer.clear();
+                    }
+                }
+            });
+
+        if (wakeword_callback_id_ < 0)
+        {
+            ESP_LOGE(TAG, "注册唤醒词音频数据回调失败");
+            return false;
+        }
+
+        ESP_LOGI(TAG, "唤醒词音频数据回调已注册 (ID=%d)", wakeword_callback_id_);
+
+        // 启动唤醒词检测
+        wakeword_->start();
+
+        ESP_LOGI(TAG, "唤醒词检测已启动");
+        return true;
+    }
+
+    void App::stopWakeWord()
+    {
+        // 停止唤醒词检测
+        if (wakeword_ && wakeword_->isRunning())
+        {
+            wakeword_->stop();
+            ESP_LOGI(TAG, "唤醒词检测已停止");
+        }
+
+        // 取消注册回调
+        if (wakeword_callback_id_ >= 0)
+        {
+            auto& capture = media::audio::capture::AudioCapture::getInstance();
+            capture.unregisterCallback(wakeword_callback_id_);
+            wakeword_callback_id_ = -1;
+            ESP_LOGI(TAG, "唤醒词音频数据回调已取消注册");
+        }
     }
 
     bool App::startAudioCapture()
@@ -840,6 +1063,12 @@ namespace app
 
         ESP_LOGI(TAG, "配网成功: SSID=%s", ssid ? ssid : "未知");
 
+        // WiFi连接成功后，启动唤醒词检测
+        if (!startWakeWord())
+        {
+            ESP_LOGW(TAG, "启动唤醒词检测失败");
+        }
+
         // WiFi连接成功后，连接WebSocket
         // if (!chatbot_.isConnected())
         // {
@@ -969,6 +1198,119 @@ namespace app
 
         // 更新呼吸灯颜色
         led_.updateBreathingColor(s_color_sequence[s_color_index]);
+    }
+
+    bool App::uploadSensorData(uint8_t control)
+    {
+        // 检查 WebSocket 是否已连接
+        if (!chatbot_.isConnected())
+        {
+            ESP_LOGW(TAG, "WebSocket 未连接，无法上传传感器数据");
+            return false;
+        }
+
+        // 将 control 值转换为 5 位字符串命令
+        // control 的位定义：bit4=触摸, bit3=压力, bit2=陀螺仪, bit1=光敏, bit0=摄像头
+        char command[6] = {0};
+        command[0]      = ((control >> 4) & 0x1) ? '1' : '0'; // 触摸
+        command[1]      = ((control >> 3) & 0x1) ? '1' : '0'; // 压力
+        command[2]      = ((control >> 2) & 0x1) ? '1' : '0'; // 陀螺仪
+        command[3]      = ((control >> 1) & 0x1) ? '1' : '0'; // 光敏
+        command[4]      = ((control >> 0) & 0x1) ? '1' : '0'; // 摄像头
+
+        // 如果所有传感器都不上传，直接返回
+        if (strcmp(command, "00000") == 0)
+        {
+            return true; // 不算错误，只是不需要上传
+        }
+
+        // 准备传感器数据
+        chatbot::message::SensorData sensor_data;
+
+        // 1. 读取触摸传感器数据
+        if (command[0] == '1')
+        {
+            sensor_data.touch = mpr121_.getCurrentTouchStatus();
+            if (sensor_data.touch < 0)
+            {
+                sensor_data.touch = 0; // 读取失败时设为 0
+            }
+        }
+
+        // 2. 读取压力传感器数据
+        if (command[1] == '1')
+        {
+            device::pressure::PressureData pressure_data;
+            if (m0404_.read(pressure_data) && pressure_data.valid)
+            {
+                // 计算16个压力值的平均值（转换为 Pa）
+                // 注意：这里需要根据实际的压力传感器单位进行转换
+                // 假设压力值单位已经是 Pa，或者需要乘以某个系数
+                uint32_t sum = 0;
+                for (size_t i = 0; i < pressure_data.pressures.size(); i++)
+                {
+                    sum += pressure_data.pressures[i];
+                }
+                sensor_data.pressure = static_cast<double>(sum) / pressure_data.pressures.size();
+            }
+            else
+            {
+                sensor_data.pressure = 0.0;
+            }
+        }
+
+        // 3. 读取陀螺仪数据
+        if (command[2] == '1')
+        {
+            device::qmi8658a::SensorData gyro_data;
+            if (qmi8658a_.read(gyro_data))
+            {
+                // 将 rad/s 转换为 deg/s
+                const float RAD_TO_DEG  = 180.0f / 3.14159265358979323846f;
+                sensor_data.gyroscope.x = static_cast<double>(gyro_data.gyro_x * RAD_TO_DEG);
+                sensor_data.gyroscope.y = static_cast<double>(gyro_data.gyro_y * RAD_TO_DEG);
+                sensor_data.gyroscope.z = static_cast<double>(gyro_data.gyro_z * RAD_TO_DEG);
+            }
+            else
+            {
+                sensor_data.gyroscope.x = 0.0;
+                sensor_data.gyroscope.y = 0.0;
+                sensor_data.gyroscope.z = 0.0;
+            }
+        }
+
+        // 4. 读取光敏传感器数据
+        if (command[3] == '1')
+        {
+            float lux = 0.0f;
+            if (apds9930_.readAmbientLightLux(lux))
+            {
+                sensor_data.photosensitive = static_cast<int>(lux);
+            }
+            else
+            {
+                sensor_data.photosensitive = 0;
+            }
+        }
+
+        // 构建消息
+        chatbot::message::BaseMessage base_msg;
+        base_msg.type      = chatbot::message::MessageType::TRANSPORT_INFO;
+        base_msg.from      = chatbot_.getDeviceMacAddress();
+        base_msg.to        = "server";
+        base_msg.timestamp = app::tool::time::iso8601Timestamp();
+
+        chatbot::message::TransportInfoMessage msg(base_msg, std::string(command), sensor_data);
+
+        // 发送消息
+        if (!chatbot_.sendMessage(msg))
+        {
+            ESP_LOGE(TAG, "发送传感器数据失败");
+            return false;
+        }
+
+        ESP_LOGI(TAG, "传感器数据已上传: command=%s", command);
+        return true;
     }
 
 } // namespace app

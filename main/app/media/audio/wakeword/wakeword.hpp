@@ -55,9 +55,15 @@ namespace app
                                       int channels) = 0;
 
                     /**
+                     * @brief 反初始化唤醒词检测器
+                     * @note 清理所有资源，包括停止检测、销毁模型数据、清空命令词等
+                     */
+                    virtual void deinit() = 0;
+
+                    /**
                      * @brief 动态添加命令词（唤醒词）
-                     * @param command 命令词拼音（如 "ni hao xiao zhi"）
-                     * @param text 显示文本（如 "你好小智"）
+                     * @param command 命令词拼音
+                     * @param text 显示文本
                      * @param action 动作类型（默认 "wake"）
                      * @return true 成功, false 失败
                      */
@@ -66,7 +72,7 @@ namespace app
 
                     /**
                      * @brief 删除命令词
-                     * @param text 显示文本（如 "你好小智"）
+                     * @param text 显示文本
                      * @return true 成功, false 未找到
                      */
                     virtual bool removeCommand(const std::string& text) = 0;
@@ -116,6 +122,12 @@ namespace app
                      */
                     virtual const std::string& getLastDetectedWakeWord() const = 0;
                 };
+
+                /**
+                 * @brief 创建自定义唤醒词检测器实例
+                 * @return WakeWord 实例指针，调用者负责管理内存
+                 */
+                WakeWord* createCustomWakeWord();
 
             } // namespace wakeword
         } // namespace audio

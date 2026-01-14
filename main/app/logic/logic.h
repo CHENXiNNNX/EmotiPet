@@ -32,5 +32,6 @@ inline logic_config_t initLogicConfig()
 // config: 配置参数
 // zero_streak: 连续 0 的计数（通过引用传递，可以修改）
 // tag: 日志标签
-int calculateControl(int touch_status, int pressure_status, int gyro_status, int light_status,int voice_status,
-                     const logic_config_t& config, int& zero_streak, const char* tag);
+int calculateControl(int touch_status, int pressure_status, int gyro_status, int light_status,
+                     int voice_status, const logic_config_t& config, int& zero_streak,
+                     const char* tag);

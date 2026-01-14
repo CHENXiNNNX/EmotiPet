@@ -10,6 +10,7 @@
 #include "device/led/led.hpp"
 #include "media/audio/audio.hpp"
 #include "media/audio/process/afe/afe.hpp"
+#include "media/audio/wakeword/wakeword.hpp"
 #include "network/network.hpp"
 #include <atomic>
 #include <memory>
@@ -77,34 +78,6 @@ namespace app
         // 初始化QMI8658A
         bool initQMI8658A(i2c_master_bus_handle_t i2c_handle);
 
-        // 初始化音频
-        bool initAudio(i2c_master_bus_handle_t i2c_handle, int sample_rate = 16000);
-
-        // 初始化 AFE
-        bool initAfe();
-
-        // 启动音频采集并连接 AFE
-        bool startAudioCapture();
-
-        // 停止音频采集
-        void stopAudioCapture();
-
-        // 初始化配网管理器
-        bool initProvision();
-
-        /**
-         * @brief 初始化Chatbot
-         * @param server_host 服务器主机地址（IP或域名），如 "192.168.1.100" 或 "example.com"
-         * @param server_port 服务器端口，如 8080
-         * @param ping_interval_sec Ping间隔（秒），默认10秒
-         * @param pingpong_timeout_sec Pong超时（秒），默认10秒
-         * @param reconnect_timeout_ms 重连超时（毫秒），默认10000毫秒
-         * @return 是否成功
-         */
-        bool initChatbot(const std::string& server_host, int server_port,
-                         int ping_interval_sec = 10, int pingpong_timeout_sec = 10,
-                         int reconnect_timeout_ms = 10000);
-
         // 初始化 APDS-9930
         bool initAPDS9930(i2c_master_bus_handle_t i2c_handle);
 
@@ -123,6 +96,43 @@ namespace app
         // 初始化 M0404 压力传感器
         bool initM0404(uart_port_t uart_num, gpio_num_t tx_pin, gpio_num_t rx_pin,
                        int baud_rate = 115200);
+
+        // 初始化配网管理器
+        bool initProvision();
+
+        // 初始化音频
+        bool initAudio(i2c_master_bus_handle_t i2c_handle, int sample_rate = 16000);
+
+        // 初始化 AFE
+        bool initAfe();
+
+        // 初始化唤醒词检测
+        bool initWakeWord();
+
+        // 启动唤醒词检测
+        bool startWakeWord();
+
+        // 停止唤醒词检测
+        void stopWakeWord();
+
+        // 启动音频采集并连接 AFE
+        bool startAudioCapture();
+
+        // 停止音频采集
+        void stopAudioCapture();
+
+        /**
+         * @brief 初始化Chatbot
+         * @param server_host 服务器主机地址（IP或域名），如 "192.168.1.100" 或 "example.com"
+         * @param server_port 服务器端口，如 8080
+         * @param ping_interval_sec Ping间隔（秒），默认10秒
+         * @param pingpong_timeout_sec Pong超时（秒），默认10秒
+         * @param reconnect_timeout_ms 重连超时（毫秒），默认10000毫秒
+         * @return 是否成功
+         */
+        bool initChatbot(const std::string& server_host, int server_port,
+                         int ping_interval_sec = 10, int pingpong_timeout_sec = 10,
+                         int reconnect_timeout_ms = 10000);
 
         // 配网状态回调
         void onProvisionStatus(app::network::ProvisionStatus status);
@@ -148,6 +158,9 @@ namespace app
         // 更新呼吸灯颜色（每次使用下一个颜色）
         void updateBreathingLEDColor();
 
+        // 上传传感器数据到服务器
+        bool uploadSensorData(uint8_t control);
+
         // 成员变量
         i2c::I2c                                         i2c_;
         device::qmi8658a::Qmi8658a                       qmi8658a_;
@@ -161,10 +174,14 @@ namespace app
         device::led::WS2812         led_;
 
         // 音频采集相关
-        int afe_callback_id_ = -1; // AudioCapture 回调 ID
+        int afe_callback_id_      = -1; // AudioCapture 回调 ID（用于 AFE）
+        int wakeword_callback_id_ = -1; // AudioCapture 回调 ID（用于唤醒词）
 
         // VAD 状态
         std::atomic<bool> is_speaking_{false};
+
+        // 唤醒词检测
+        std::unique_ptr<media::audio::wakeword::WakeWord> wakeword_;
     };
 
 } // namespace app
