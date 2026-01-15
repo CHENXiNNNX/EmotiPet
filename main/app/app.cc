@@ -49,33 +49,30 @@ namespace app
             // 不返回 false，允许其他功能继续
         }
 
-        // 初始化 APDS-9930 传感器（可选，未连接时不退出）
+        // 初始化 APDS-9930 传感器
         if (!initAPDS9930(getI2CBusHandle()))
         {
             ESP_LOGW(TAG, "APDS-9930 初始化失败（可能未连接）");
-            // 不返回 false，允许其他功能继续
         }
 
-        // 初始化 MPR121 触摸传感器（可选，未连接时不退出）
+        // 初始化 MPR121 触摸传感器
         if (!initMPR121(getI2CBusHandle()))
         {
             ESP_LOGW(TAG, "MPR121 触摸传感器初始化失败（可能未连接）");
-            // 不返回 false，允许其他功能继续
+
         }
 
-        // 初始化 M0404 压力传感器（可选，未连接时不退出）
-        // 传感器TX -> ESP32 RX (GPIO15), 传感器RX -> ESP32 TX (GPIO7)
-        if (!initM0404(UART_NUM_2, GPIO_NUM_7, GPIO_NUM_15, 115200))
+        // 初始化 M0404 压力传感器
+        // 传感器TX -> ESP32 RX (GPIO1), 传感器RX -> ESP32 TX (GPIO2)
+        if (!initM0404(UART_NUM_2, GPIO_NUM_2, GPIO_NUM_1, 115200))
         {
             ESP_LOGW(TAG, "M0404 压力传感器初始化失败（可能未连接）");
-            // 不返回 false，允许其他功能继续
         }
 
-        // 初始化 LED（可选，未连接时不退出）
+        // 初始化 LED
         if (!initLED())
         {
             ESP_LOGW(TAG, "LED 初始化失败（可能未连接）");
-            // 不返回 false，允许其他功能继续
         }
 
         if (!initProvision())
@@ -126,15 +123,11 @@ namespace app
         // 启动 APDS-9930 传感器数据获取（非阻塞）
         if (apds9930_.isInitialized())
         {
-            // 设置环境光状态回调函数
-            // 当环境光 >= 1500 lux 时，light_status = 1（亮）
-            // 当环境光 < 1500 lux 时，light_status = 0（灭）
             apds9930_.setLightStatusCallback(
                 [](int light_status)
                 {
                     const char* status_str = (light_status == 1) ? "亮" : "灭";
                     ESP_LOGI(TAG, "环境光状态回调: %d (%s)", light_status, status_str);
-                    // 通过以下方式获取当前光状态：
                     // int status = apds9930_.getCurrentLightStatus();
                 });
 
@@ -165,9 +158,6 @@ namespace app
         // 启动 M0404 压力传感器数据采集（非阻塞）
         if (m0404_.isInitialized())
         {
-            // 设置压力状态回调函数
-            // 当有压力时，pressure_status = 1（有压力）
-            // 当无压力时，pressure_status = 0（无压力）
             m0404_.setPressureStatusCallback(
                 [](int pressure_status)
                 {
@@ -176,7 +166,6 @@ namespace app
                     // {
                     //     ESP_LOGI(TAG, "压力状态回调: %d (有压力)", pressure_status);
                     // }
-                    // 通过以下方式获取当前压力状态：
                     // int status = m0404_.getCurrentPressureStatus();
                 });
 
@@ -198,9 +187,6 @@ namespace app
         // 启动 MPR121 触摸传感器数据采集（非阻塞）
         if (mpr121_.isInitialized())
         {
-            // 设置触摸状态回调函数
-            // 当有触摸时，touch_status = 1（触摸）
-            // 当未触摸时，touch_status = 0（未触摸）
             mpr121_.setTouchStatusCallback(
                 [](int touch_status)
                 {
@@ -209,7 +195,6 @@ namespace app
                     // {
                     //     ESP_LOGI(TAG, "触摸状态回调: %d (触摸)", touch_status);
                     // }
-                    // 通过以下方式获取当前触摸状态：
                     // int status = mpr121_.getCurrentTouchStatus();
                 });
 
@@ -231,9 +216,6 @@ namespace app
         // 启动 QMI8658A 陀螺仪数据采集（非阻塞）
         if (qmi8658a_.isInitialized())
         {
-            // 设置运动状态回调函数
-            // 当加速度变化很大时，motion_status = 1（动了）
-            // 当加速度没变化时，motion_status = 0（没动）
             qmi8658a_.setMotionStatusCallback(
                 [this](int motion_status)
                 {
@@ -242,7 +224,6 @@ namespace app
                     //{
                     //    ESP_LOGI(TAG, "运动状态回调: %d (动了)", motion_status);
                     //}
-                    // 通过以下方式获取当前运动状态：
                     // int status = qmi8658a_.getCurrentMotionStatus();
                 });
 
@@ -280,6 +261,15 @@ namespace app
             logMemoryInfo();
             logWiFiInfo();
             logQMI8658AInfo();
+            // 获取 M0404 压力传感器的16个压力值（从后台数据采集任务获取最新数据）
+            //app::device::pressure::PressureData data;
+            //if (m0404_.getLatestPressureData(data)) {
+            //    ESP_LOGI(TAG, "M0404 压力值 (16个传感器):");
+            //    for (size_t i = 0; i < 16; i++) {
+            //        uint16_t raw_value = data.pressures[i];  // 原始值范围：0-65535
+            //        ESP_LOGI(TAG, "  传感器[%2lu]: %5u", (unsigned long)i, raw_value);
+            //    }
+            //}
             week(mpr121_.getCurrentTouchStatus(),
             m0404_.getCurrentPressureStatus(),
             qmi8658a_.getCurrentMotionStatus(),

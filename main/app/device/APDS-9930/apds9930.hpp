@@ -506,7 +506,7 @@ namespace app
                 int current_light_status_ = -1;
                 
                 // 环境光阈值（lux）
-                static constexpr float LIGHT_THRESHOLD_LUX = 1500.0f;
+                static constexpr float LIGHT_THRESHOLD_LUX = 1000.0f;
             };
 
         } // namespace apds9930

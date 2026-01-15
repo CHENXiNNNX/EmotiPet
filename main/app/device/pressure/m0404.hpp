@@ -175,6 +175,31 @@ namespace app
                     return getInstance().getCurrentPressureStatus();
                 }
 
+                /**
+                 * @brief 获取最新的压力数据（由后台数据采集任务更新）
+                 * @param data 输出数据结构
+                 * @return true 数据有效, false 数据无效或未采集
+                 */
+                bool getLatestPressureData(PressureData& data) const
+                {
+                    if (!latest_data_.valid)
+                    {
+                        return false;
+                    }
+                    data = latest_data_;
+                    return true;
+                }
+
+                /**
+                 * @brief 静态方法：获取最新的压力数据（便捷接口）
+                 * @param data 输出数据结构
+                 * @return true 数据有效, false 数据无效或未采集
+                 */
+                static bool GetLatestPressureData(PressureData& data)
+                {
+                    return getInstance().getLatestPressureData(data);
+                }
+
             private:
                 M0404() = default;
                 ~M0404();
@@ -202,6 +227,9 @@ namespace app
                 
                 // 当前压力状态：0=无压力，1=有压力，-1=未初始化
                 int current_pressure_status_ = -1;
+
+                // 最新的压力数据（由后台数据采集任务更新）
+                PressureData latest_data_;
 
                 // 接收缓冲区
                 uint8_t rx_buffer_[PACKET_SIZE * 2]; // 足够大的缓冲区

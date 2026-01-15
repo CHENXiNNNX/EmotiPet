@@ -30,7 +30,7 @@ namespace app
             // 默认配置值
             constexpr uint8_t DEFAULT_TOUCH_THRESHOLD   = 0x0F; // 触摸阈值
             constexpr uint8_t DEFAULT_RELEASE_THRESHOLD = 0x0A; // 释放阈值
-            constexpr uint8_t DEFAULT_ELECTRODE_CONFIG  = 0x0C; // 电极配置（启用所有12个电极）
+            constexpr uint8_t DEFAULT_ELECTRODE_CONFIG  = 0x03; // 电极配置（启用3个电极）
 
             MPR121::~MPR121()
             {

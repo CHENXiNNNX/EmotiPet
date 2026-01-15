@@ -15,7 +15,7 @@ namespace app
         const i2c_port_t MPR121_I2C_PORT = I2C_NUM_1;
         const gpio_num_t MPR121_SDA = GPIO_NUM_17;
         const gpio_num_t MPR121_SCL = GPIO_NUM_18;
-        const gpio_num_t MPR121_IRQ = GPIO_NUM_0; // 不使用IRQ，设为0
+        //const gpio_num_t MPR121_IRQ = GPIO_NUM_; // 不使用IRQ，设为0
 
         // i2s pins
         const gpio_num_t I2S_MCLK = GPIO_NUM_16;
@@ -28,7 +28,7 @@ namespace app
         const gpio_num_t PA_PIN = GPIO_NUM_48;
 
         // led pins
-        const gpio_num_t LED_GPIO = GPIO_NUM_1;
+        const gpio_num_t LED_GPIO = GPIO_NUM_0;
 
         // camera pins
         const gpio_num_t CAM_DVP_D0    = GPIO_NUM_13; // CAMERA_PIN_D0
