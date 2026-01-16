@@ -15,22 +15,24 @@ namespace app
             // MPR121 寄存器地址
             enum Reg : uint8_t
             {
-                TOUCH_STATUS_L = 0x00, // 触摸状态低字节
-                TOUCH_STATUS_H = 0x01, // 触摸状态高字节
-                ELE0_T         = 0x04, // 电极0触摸阈值
-                ELE0_R         = 0x05, // 电极0释放阈值
-                ELE1_T         = 0x06, // 电极1触摸阈值
-                ELE1_R         = 0x07, // 电极1释放阈值
+                TOUCH_STATUS_L = 0x00, // 触摸状态低字节 (MPR121_TS1)
+                TOUCH_STATUS_H = 0x01, // 触摸状态高字节 (MPR121_TS2)
+                ELE0_T         = 0x41, // 电极0触摸阈值 (MPR121_E0TTH)
+                ELE0_R         = 0x42, // 电极0释放阈值 (MPR121_E0RTH)
+                ELE1_T         = 0x43, // 电极1触摸阈值 (MPR121_E1TTH)
+                ELE1_R         = 0x44, // 电极1释放阈值 (MPR121_E1RTH)
                 // ... 其他电极配置寄存器
-                ELE_CFG        = 0x5E, // 电极配置寄存器
-                FIL_CFG        = 0x5D, // 滤波器配置寄存器
-                ELE_CFG_2      = 0x5F, // 电极配置寄存器2
+                AFE2           = 0x5D, // AFE配置寄存器2 (MPR121_AFE2)
+                ELE_CFG        = 0x5E, // 电极配置寄存器 (MPR121_ECR)
+                SRST           = 0x80, // 软复位寄存器 (MPR121_SRST)
             };
 
-            // 默认配置值
-            constexpr uint8_t DEFAULT_TOUCH_THRESHOLD   = 0x0F; // 触摸阈值
-            constexpr uint8_t DEFAULT_RELEASE_THRESHOLD = 0x0A; // 释放阈值
-            constexpr uint8_t DEFAULT_ELECTRODE_CONFIG  = 0x03; // 电极配置（启用3个电极）
+            // 默认配置值（参考原始组件的默认值）
+            constexpr uint8_t DEFAULT_TOUCH_THRESHOLD   = 40;  // 触摸阈值（原始组件默认值）
+            constexpr uint8_t DEFAULT_RELEASE_THRESHOLD = 20;  // 释放阈值（原始组件默认值）
+            constexpr uint8_t DEFAULT_ELECTRODE_CONFIG  = 0x03; // 电极配置（启用3个电极，根据实际需求调整）
+            constexpr uint8_t SOFT_RESET_VALUE          = 0x63; // 软复位值
+            constexpr uint8_t AFE2_DEFAULT_VALUE        = 0x24; // AFE2默认值（用于验证初始化）
 
             MPR121::~MPR121()
             {
@@ -69,10 +71,33 @@ namespace app
                     return false;
                 }
 
-                // 软复位：写入 0x63 到软复位寄存器（如果存在）
-                // 注意：某些 MPR121 驱动可能需要特定的初始化序列
+                // 软复位：写入 0x63 到软复位寄存器（参考原始组件 MPR121_reset）
+                if (!wireWriteDataByte(SRST, SOFT_RESET_VALUE))
+                {
+                    ESP_LOGE(TAG, "软复位失败");
+                    deinit();
+                    return false;
+                }
 
-                // 配置电极阈值（所有12个电极使用相同的阈值）
+                // 等待复位完成
+                vTaskDelay(pdMS_TO_TICKS(10));
+
+                // 验证初始化：检查 AFE2 寄存器是否为默认值 0x24
+                uint8_t afe2_value = 0;
+                if (!wireReadDataByte(AFE2, afe2_value))
+                {
+                    ESP_LOGE(TAG, "读取 AFE2 寄存器失败");
+                    deinit();
+                    return false;
+                }
+
+                if (afe2_value != AFE2_DEFAULT_VALUE)
+                {
+                    ESP_LOGW(TAG, "AFE2 寄存器值异常: 0x%02X (期望: 0x%02X)", afe2_value, AFE2_DEFAULT_VALUE);
+                    // 不直接返回失败，继续初始化流程
+                }
+
+                // 配置电极阈值（根据实际使用的电极数量）
                 for (uint8_t i = 0; i < MPR121_ELECTRODE_COUNT; i++)
                 {
                     uint8_t touch_reg   = ELE0_T + i * 2;
@@ -93,7 +118,9 @@ namespace app
                     }
                 }
 
-                // 配置电极使能寄存器（启用所有12个电极）
+                // 配置电极使能寄存器（启用指定数量的电极）
+                // 注意：ECR 寄存器的低4位表示启用的电极数量（0-12）
+                // 0x03 表示启用3个电极（0, 1, 2）
                 if (!wireWriteDataByte(ELE_CFG, DEFAULT_ELECTRODE_CONFIG))
                 {
                     ESP_LOGE(TAG, "设置电极配置失败");

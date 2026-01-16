@@ -86,7 +86,7 @@ extern "C" void app_main(void)
     // 等待初始化稳定
     vTaskDelay(pdMS_TO_TICKS(200));
     
-    ESP_LOGI(TAG, "开始实时监测通道1（压力）和通道2（触摸）电容值...");
+    ESP_LOGI(TAG, "开始实时监测通道1（压力）、通道2（触摸）和通道5（压力）电容值...");
     ESP_LOGI(TAG, "只在按下或松开时显示数据");
     ESP_LOGI(TAG, "按 Ctrl+C 停止监测");
     
@@ -95,19 +95,22 @@ extern "C" void app_main(void)
     // 状态记录：记录上一次的状态
     bool prev_ch1_pressed = false;  // 通道1（压力）上一次是否按下
     bool prev_ch2_pressed = false;  // 通道2（触摸）上一次是否按下
-    
+    bool prev_ch5_pressed = false;  // 通道5（压力）上一次是否按下
+
     // 阈值设置：根据实际测试调整
     // 如果电容值超过阈值，认为按下；低于阈值，认为松开
     // 使用相对阈值：相对于基准值的百分比变化，更敏感
     float ch1_threshold_percent = 5.0f;  // 通道1（压力）阈值：基准值的5%（可根据实际情况调整）
     float ch2_threshold_percent = 5.0f;  // 通道2（触摸）阈值：基准值的5%（可根据实际情况调整）
+    float ch5_threshold_percent = 5.0f;  // 通道5（压力）阈值：基准值的5%（可根据实际情况调整）
     float ch1_threshold_absolute = 1.0f;  // 通道1（压力）绝对阈值：1.0 pF（最小变化量）
     float ch2_threshold_absolute = 1.0f;  // 通道2（触摸）绝对阈值：1.0 pF（最小变化量）
-    
+    float ch5_threshold_absolute = 2.0f;  // 通道5（压力）绝对阈值：1.0 pF（最小变化量）
     // 先读取几次数据，用于校准基准值
     ESP_LOGI(TAG, "正在校准基准值...");
     float ch1_baseline = 0.0f;
     float ch2_baseline = 0.0f;
+    float ch5_baseline = 0.0f;
     int baseline_count = 0;
     const int baseline_samples = 5;  // 采样5次计算基准值
     
@@ -123,6 +126,10 @@ extern "C" void app_main(void)
                 cap_structure.data_ref > 0) {
                 ch2_baseline += cap_structure.cap_ch[2];
             }
+            if (cap_structure.data_ch[5] > 0 && cap_structure.data_ch[5] < 65535 && 
+                cap_structure.data_ref > 0) {
+                ch5_baseline += cap_structure.cap_ch[5];
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -130,11 +137,13 @@ extern "C" void app_main(void)
     if (baseline_count > 0) {
         ch1_baseline /= baseline_count;
         ch2_baseline /= baseline_count;
-        ESP_LOGI(TAG, "基准值校准完成: 通道1=%.3f pF, 通道2=%.3f pF", ch1_baseline, ch2_baseline);
+        ch5_baseline /= baseline_count;
+        ESP_LOGI(TAG, "基准值校准完成: 通道1=%.3f pF, 通道2=%.3f pF, 通道5=%.3f pF", ch1_baseline, ch2_baseline, ch5_baseline);
     } else {
         ESP_LOGW(TAG, "基准值校准失败，使用默认阈值");
         ch1_baseline = 0.0f;
         ch2_baseline = 0.0f;
+        ch5_baseline = 0.0f;
     }
     
     // 循环读取通道1和通道2的电容值
@@ -144,17 +153,22 @@ extern "C" void app_main(void)
             // 通道1（压力）对应索引1，通道2（触摸）对应索引2
             unsigned short data_ch1 = cap_structure.data_ch[1];  // 通道1（压力）原始数据
             unsigned short data_ch2 = cap_structure.data_ch[2];  // 通道2（触摸）原始数据
+            unsigned short data_ch5 = cap_structure.data_ch[5];  // 通道5（压力）原始数据
             unsigned short data_ref = cap_structure.data_ref;    // 参考通道原始数据
             
             float cap_ch1 = cap_structure.cap_ch[1];  // 通道1（压力）电容值
             float cap_ch2 = cap_structure.cap_ch[2];  // 通道2（触摸）电容值
+            float cap_ch5 = cap_structure.cap_ch[5]; // 通道5（压力）电容值
             float freq_ch1 = cap_structure.freq_ch[1]; // 通道1（压力）频率
             float freq_ch2 = cap_structure.freq_ch[2]; // 通道2（触摸）频率
+            float freq_ch5 = cap_structure.freq_ch[5]; // 通道5（压力）频率
+            
             
             // 检查数据有效性
             bool ch1_valid = (data_ch1 > 0 && data_ch1 < 65535 && data_ref > 0);
             bool ch2_valid = (data_ch2 > 0 && data_ch2 < 65535 && data_ref > 0);
-            
+            bool ch5_valid = (data_ch5 > 0 && data_ch5 < 65535 && data_ref > 0);
+
             // 判断当前状态：使用相对阈值和绝对阈值中较大的一个
             // 相对阈值：基准值的百分比变化（适用于基准值较大的情况）
             // 绝对阈值：最小变化量（适用于基准值较小的情况）
@@ -164,13 +178,18 @@ extern "C" void app_main(void)
             float ch2_threshold = ch2_baseline > 0 ? 
                 fmax(ch2_baseline * ch2_threshold_percent / 100.0f, ch2_threshold_absolute) : 
                 ch2_threshold_absolute;
+            float ch5_threshold = ch5_baseline > 0 ? 
+                fmax(ch5_baseline * ch5_threshold_percent / 100.0f, ch5_threshold_absolute) : 
+                ch5_threshold_absolute;
             
             bool ch1_pressed = ch1_valid && (cap_ch1 > (ch1_baseline + ch1_threshold));
             bool ch2_pressed = ch2_valid && (cap_ch2 > (ch2_baseline + ch2_threshold));
-            
+            bool ch5_pressed = ch5_valid && (cap_ch5 > (ch5_baseline + ch5_threshold));
+
             // 检测状态变化
             bool ch1_state_changed = (ch1_pressed != prev_ch1_pressed);
             bool ch2_state_changed = (ch2_pressed != prev_ch2_pressed);
+            bool ch5_state_changed = (ch5_pressed != prev_ch5_pressed);
             
             // 调试信息：显示阈值比较（仅在状态变化或按下时显示，避免输出过多）
             if ((ch1_state_changed || ch1_pressed) && ch1_valid) {
@@ -185,14 +204,20 @@ extern "C" void app_main(void)
                          cap_ch2, ch2_baseline, diff_ch2, ch2_threshold, 
                          ch2_pressed ? "按下" : "松开");
             }
+            if ((ch5_state_changed || ch5_pressed) && ch5_valid) {
+                float diff_ch5 = cap_ch5 - ch5_baseline;
+                ESP_LOGI(TAG, "[调试] CH5: 电容=%.3f pF, 基准=%.3f pF, 差值=%.3f pF, 阈值=%.3f pF, 状态=%s",
+                         cap_ch5, ch5_baseline, diff_ch5, ch5_threshold, 
+                         ch5_pressed ? "按下" : "松开");
+            }
             
             // 显示逻辑：
             // 1. 状态改变时（按下或松开）显示
             // 2. 按着的时候持续显示
             // 3. 松开且状态未改变时不显示
             bool should_display = false;
-            bool is_state_change = (ch1_state_changed || ch2_state_changed);
-            bool is_pressed = (ch1_pressed || ch2_pressed);
+            bool is_state_change = (ch1_state_changed || ch2_state_changed || ch5_state_changed);
+            bool is_pressed = (ch1_pressed || ch2_pressed || ch5_pressed);
             
             if (is_state_change || is_pressed) {
                 should_display = true;
@@ -236,6 +261,22 @@ extern "C" void app_main(void)
                                  cap_ch2, freq_ch2, data_ch2);
                     }
                 }
+
+                if (ch5_valid) {
+                    if (ch5_state_changed) {
+                        if (ch5_pressed) {
+                            ESP_LOGI(TAG, "  [按下] 通道5(压力): %.3f pF | 频率: %.3f MHz | 原始数据: %d", 
+                                     cap_ch5, freq_ch5, data_ch5);
+                        } else {
+                            ESP_LOGI(TAG, "  [松开] 通道5(压力): %.3f pF | 频率: %.3f MHz | 原始数据: %d", 
+                                     cap_ch5, freq_ch5, data_ch5);
+                        }
+                    } else if (ch5_pressed) {
+                        // 按着的时候持续显示
+                        ESP_LOGI(TAG, "  [按住] 通道5(压力): %.3f pF | 频率: %.3f MHz | 原始数据: %d", 
+                                 cap_ch5, freq_ch5, data_ch5);
+                    }
+                }
                 
                 ESP_LOGI(TAG, "  参考通道: %.3f MHz | 原始数据: %d", 
                          cap_structure.freq_ref, data_ref);
@@ -244,6 +285,7 @@ extern "C" void app_main(void)
             // 更新上一次的状态
             prev_ch1_pressed = ch1_pressed;
             prev_ch2_pressed = ch2_pressed;
+            prev_ch5_pressed = ch5_pressed;
         }
         
         // 延时100ms，提高响应速度
