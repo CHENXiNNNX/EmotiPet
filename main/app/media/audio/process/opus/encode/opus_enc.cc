@@ -65,9 +65,10 @@ namespace app
                                 return;
                             }
 
-                            // 分配输入和输出缓冲区（使用 4 倍帧大小以支持流式编码）
-                            input_buffer_size_  = in_size * 4;
-                            output_buffer_size_ = out_size * 4;
+                            // 分配输入和输出缓冲区（使用 16 倍帧大小以支持流式编码）
+                            // 增加缓冲区以避免 AFE 高速输出时的溢出
+                            input_buffer_size_  = in_size * 16;
+                            output_buffer_size_ = out_size * 16;
 
                             input_buffer_ =
                                 std::unique_ptr<uint8_t[], tool::memory::EspHeapDeleter>(

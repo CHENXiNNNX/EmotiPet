@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
@@ -25,6 +26,7 @@ namespace app
                 MOV_INFO,       // 运动数据接收
                 LISTEN,         // 音频监听
                 PLAY,           // 音频播放
+                EMOTION,        // 情绪反馈
                 ERROR,          // 错误
                 UNKNOWN         // 未知类型
             };
@@ -48,6 +50,8 @@ namespace app
                     return "listen";
                 case MessageType::PLAY:
                     return "play";
+                case MessageType::EMOTION:
+                    return "emotion";
                 case MessageType::ERROR:
                     return "error";
                 default:
@@ -72,6 +76,8 @@ namespace app
                     return MessageType::LISTEN;
                 if (type_str == "play")
                     return MessageType::PLAY;
+                if (type_str == "emotion")
+                    return MessageType::EMOTION;
                 if (type_str == "error")
                     return MessageType::ERROR;
                 return MessageType::UNKNOWN;
@@ -116,12 +122,15 @@ namespace app
              */
             struct SensorData
             {
-                int           touch;          // 触摸状态，0=未触摸，1=触摸
-                double        pressure;       // 压力值，单位：Pa
-                GyroscopeData gyroscope;      // 陀螺仪数据
-                int           photosensitive; // 光敏值，单位：lux
+                int                 touch;          // 触摸状态，0=未触摸，1=触摸
+                std::array<int, 16> pressure;       // 压力传感器阵列，16个点位(0-15)，单位：Pa
+                GyroscopeData       gyroscope;      // 陀螺仪数据
+                float               photosensitive; // 光敏值，单位：lux
 
-                SensorData() : touch(0), pressure(0.0), photosensitive(0) {}
+                SensorData() : touch(0), photosensitive(0)
+                {
+                    pressure.fill(0); // 初始化为全0
+                }
             };
 
             /**
@@ -203,13 +212,15 @@ namespace app
              */
             struct ServoControl
             {
-                std::string start_time; // 运动的起始时间，ISO 8601格式
-                int         angle;      // 舵机角度，范围：0-180
-                int         duration;   // 运动持续时间，单位：毫秒
+                std::string move_part; // 运动部位（h1头1, h2头2, b1身体1, b2尾巴）
+                std::string
+                    start_time; // 运动的起始时间，按照第一个动作开始为0时间时间轴开始，单位ms
+                int angle;      // 舵机变换到指定角度，整数，范围：0-180
+                int duration;   // 运动持续时间，整数，单位：毫秒
 
                 ServoControl() : angle(0), duration(0) {}
-                ServoControl(const std::string& time, int a, int d)
-                    : start_time(time), angle(a), duration(d)
+                ServoControl(const std::string& part, const std::string& time, int a, int d)
+                    : move_part(part), start_time(time), angle(a), duration(d)
                 {
                 }
             };
@@ -238,6 +249,17 @@ namespace app
 
                 ErrorData() : code(0) {}
                 ErrorData(int c, const std::string& msg) : code(c), message(msg) {}
+            };
+
+            /**
+             * @brief 情绪数据
+             */
+            struct EmotionData
+            {
+                std::string code; // 情绪代码：0开心、1伤心、2生气、3平淡、4恐惧、5惊讶、6未知
+
+                EmotionData() : code("0") {}
+                explicit EmotionData(const std::string& c) : code(c) {}
             };
 
             /**
@@ -493,6 +515,40 @@ namespace app
                 MessageType getType() const override
                 {
                     return MessageType::ERROR;
+                }
+
+                std::string toJson() const override;
+                bool        fromJson(const std::string& json_str) override;
+
+                BaseMessage getBase() const override
+                {
+                    return base;
+                }
+
+                void setBase(const BaseMessage& b) override
+                {
+                    base = b;
+                }
+            };
+
+            /**
+             * @brief 情绪反馈消息
+             */
+            class EmotionMessage : public Message
+            {
+            public:
+                BaseMessage base;
+                EmotionData data;
+
+                EmotionMessage() {}
+                EmotionMessage(const BaseMessage& b, const EmotionData& emotion_data)
+                    : base(b), data(emotion_data)
+                {
+                }
+
+                MessageType getType() const override
+                {
+                    return MessageType::EMOTION;
                 }
 
                 std::string toJson() const override;

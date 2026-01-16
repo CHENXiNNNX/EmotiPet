@@ -323,30 +323,39 @@ namespace app
                 return samples;
             }
 
-            void Audio::setOutputVolume(int volume)
+            bool Audio::setOutputVolume(int volume)
             {
                 volume         = std::max(0, std::min(100, volume));
                 output_volume_ = volume;
 
                 if (initialized_ && output_dev_ != nullptr)
                 {
-                    esp_codec_dev_set_out_vol(output_dev_, volume);
+                    esp_err_t ret = esp_codec_dev_set_out_vol(output_dev_, volume);
+                    if (ret != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "设置输出音量失败: %s", esp_err_to_name(ret));
+                        return false;
+                    }
+                    return true;
                 }
+
+                // 如果设备未初始化，仍然保存音量值，但返回 false
+                return false;
             }
 
-            void Audio::enableInput(bool enable)
+            bool Audio::enableInput(bool enable)
             {
                 std::lock_guard<std::mutex> lock(data_if_mutex_);
 
                 if (enable == input_enabled_)
                 {
-                    return;
+                    return true; // 已经是目标状态，返回成功
                 }
 
                 if (!initialized_ || input_dev_ == nullptr)
                 {
                     ESP_LOGE(TAG, "Audio 未初始化，无法启用输入");
-                    return;
+                    return false;
                 }
 
                 if (enable)
@@ -376,7 +385,7 @@ namespace app
                     if (ret != ESP_OK)
                     {
                         ESP_LOGE(TAG, "打开输入设备失败: %s", esp_err_to_name(ret));
-                        return;
+                        return false; // 失败，不更新状态
                     }
 
                     // 为所有 4 个麦克风设置增益
@@ -385,28 +394,33 @@ namespace app
                         esp_codec_dev_set_in_channel_gain(
                             input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(i), input_gain_);
                     }
+
+                    input_enabled_ = true;
+                    ESP_LOGI(TAG, "音频输入已启用");
+                    return true;
                 }
                 else
                 {
                     esp_codec_dev_close(input_dev_);
+                    input_enabled_ = false;
+                    ESP_LOGI(TAG, "音频输入已禁用");
+                    return true;
                 }
-
-                input_enabled_ = enable;
             }
 
-            void Audio::enableOutput(bool enable)
+            bool Audio::enableOutput(bool enable)
             {
                 std::lock_guard<std::mutex> lock(data_if_mutex_);
 
                 if (enable == output_enabled_)
                 {
-                    return;
+                    return true; // 已经是目标状态，返回成功
                 }
 
                 if (!initialized_ || output_dev_ == nullptr)
                 {
                     ESP_LOGE(TAG, "Audio 未初始化，无法启用输出");
-                    return;
+                    return false;
                 }
 
                 if (enable)
@@ -422,13 +436,17 @@ namespace app
                     if (ret != ESP_OK)
                     {
                         ESP_LOGE(TAG, "打开输出设备失败: %s", esp_err_to_name(ret));
-                        return;
+                        return false; // 失败，不更新状态
                     }
                     esp_codec_dev_set_out_vol(output_dev_, output_volume_);
                     if (config_.pa_pin != GPIO_NUM_NC)
                     {
                         gpio_set_level(config_.pa_pin, 1);
                     }
+
+                    output_enabled_ = true;
+                    ESP_LOGI(TAG, "音频输出已启用");
+                    return true;
                 }
                 else
                 {
@@ -437,9 +455,11 @@ namespace app
                     {
                         gpio_set_level(config_.pa_pin, 0);
                     }
-                }
 
-                output_enabled_ = enable;
+                    output_enabled_ = false;
+                    ESP_LOGI(TAG, "音频输出已禁用");
+                    return true;
+                }
             }
         } // namespace audio
     } // namespace media

@@ -1,9 +1,10 @@
 #pragma once
 
-#include "handle/handle.hpp"
 #include "message/message.hpp"
 #include "protocol/websocket/websocket.hpp"
 
+#include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -13,29 +14,9 @@ namespace app
     {
 
         /**
-         * @brief 默认消息处理器（内部实现）
-         *
-         * 所有消息处理方法都保留空实现，等待后续完善
-         */
-        class DefaultMessageHandler : public handle::MessageHandler
-        {
-        public:
-            DefaultMessageHandler()           = default;
-            ~DefaultMessageHandler() override = default;
-
-            void handleTransportInfo(const message::TransportInfoMessage& msg) override;
-            void handleBluetoothInfo(const message::BluetoothInfoMessage& msg) override;
-            void handleRecvInfo(const message::RecvInfoMessage& msg) override;
-            void handleMovInfo(const message::MovInfoMessage& msg) override;
-            void handleListen(const message::ListenMessage& msg) override;
-            void handlePlay(const message::PlayMessage& msg) override;
-            void handleError(const message::ErrorMessage& msg) override;
-        };
-
-        /**
          * @brief Chatbot 主类
          *
-         * 负责管理WebSocket连接、消息发送和接收、消息路由等功能
+         * 负责管理WebSocket连接、消息发送和接收等功能
          */
         class Chatbot
         {
@@ -55,15 +36,9 @@ namespace app
             };
 
             /**
-             * @brief 构造函数（使用默认消息处理器）
+             * @brief 构造函数
              */
             Chatbot();
-
-            /**
-             * @brief 构造函数
-             * @param handler 消息处理器（必须实现MessageHandler接口）
-             */
-            explicit Chatbot(std::shared_ptr<handle::MessageHandler> handler);
 
             /**
              * @brief 析构函数
@@ -124,28 +99,52 @@ namespace app
             bool sendBinary(const uint8_t* data, size_t len, int timeout_ms = 5000);
 
             /**
-             * @brief 发送图片数据（JPEG格式）
-             * @param image_data 图片数据指针
-             * @param image_len 图片数据长度
-             * @param timeout_ms 超时时间（毫秒），默认5000
-             * @return 是否发送成功
-             */
-            bool sendImage(const uint8_t* image_data, size_t image_len, int timeout_ms = 5000);
-
-            /**
-             * @brief 发送音频数据（OPUS格式）
-             * @param audio_data 音频数据指针
-             * @param audio_len 音频数据长度
-             * @param timeout_ms 超时时间（毫秒），默认5000
-             * @return 是否发送成功
-             */
-            bool sendAudio(const uint8_t* audio_data, size_t audio_len, int timeout_ms = 5000);
-
-            /**
-             * @brief 获取设备MAC地址（用于消息的from字段）
+             * @brief 获取设备MAC地址
              * @return MAC地址字符串
              */
             std::string getDeviceMacAddress() const;
+
+            // ========== 回调函数类型定义 ==========
+
+            /**
+             * @brief 发送回调函数类型
+             *
+             * 在消息发送前调用，可以：
+             * - 统一填充基础字段（from, timestamp等）
+             * - 验证消息内容
+             * - 记录日志
+             * - 修改消息内容
+             *
+             * @param msg 待发送的消息对象（可以修改）
+             * @return 处理后的JSON字符串，如果返回空字符串则取消发送
+             */
+            using SendCallback = std::function<std::string(message::Message& msg)>;
+
+            /**
+             * @brief 接收回调函数类型
+             *
+             * 在消息接收后调用，按消息类型分发处理：
+             * - 统一解析JSON
+             * - 统一验证消息
+             * - 统一记录日志
+             * - 按类型调用对应的处理函数
+             *
+             * @param json_str 接收到的JSON字符串
+             * @return 是否处理成功
+             */
+            using ReceiveCallback = std::function<bool(const std::string& json_str)>;
+
+            /**
+             * @brief 设置发送回调
+             * @param callback 发送回调函数
+             */
+            void setSendCallback(SendCallback&& callback);
+
+            /**
+             * @brief 设置接收回调
+             * @param callback 接收回调函数
+             */
+            void setReceiveCallback(ReceiveCallback&& callback);
 
         private:
             /**
@@ -170,12 +169,11 @@ namespace app
              */
             void onWebSocketError(const protocol::websocket::ErrorEvent& event);
 
-            std::shared_ptr<handle::MessageHandler> handler_; // 消息处理器
-            std::shared_ptr<DefaultMessageHandler>
-                default_handler_; // 默认消息处理器（当未提供自定义handler时使用）
-            protocol::websocket::WebSocketClient* ws_client_;   // WebSocket客户端指针
-            Config                                config_;      // 配置信息
-            bool                                  initialized_; // 是否已初始化
+            SendCallback                          send_callback_;    // 发送回调
+            ReceiveCallback                       receive_callback_; // 接收回调
+            protocol::websocket::WebSocketClient* ws_client_;        // WebSocket客户端指针
+            Config                                config_;           // 配置信息
+            bool                                  initialized_;      // 是否已初始化
         };
 
     } // namespace chatbot

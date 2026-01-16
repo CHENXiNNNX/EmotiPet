@@ -52,11 +52,26 @@ namespace app
                 // input_reference=false: 返回 4 通道交错 PCM [mic1,mic2,mic3,mic4,mic1,...] (dest
                 // 长度 >= samples*4) input_reference=true: 返回 8 通道交错
                 // [mic1,ref1,mic2,ref2,mic3,ref3,mic4,ref4,...] (dest 长度 >= samples*8)
-                int  read(int16_t* dest, int samples);
-                int  write(const int16_t* data, int samples);
-                void setOutputVolume(int volume);
-                void enableInput(bool enable);
-                void enableOutput(bool enable);
+                int read(int16_t* dest, int samples);
+                int write(const int16_t* data, int samples);
+                /**
+                 * @brief 设置输出音量
+                 * @param volume 音量值，范围：0-100
+                 * @return true=成功, false=失败
+                 */
+                bool setOutputVolume(int volume);
+                /**
+                 * @brief 启用/禁用音频输入
+                 * @param enable true=启用, false=禁用
+                 * @return true=成功, false=失败
+                 */
+                bool enableInput(bool enable);
+                /**
+                 * @brief 启用/禁用音频输出
+                 * @param enable true=启用, false=禁用
+                 * @return true=成功, false=失败
+                 */
+                bool enableOutput(bool enable);
                 bool isInitialized() const
                 {
                     return initialized_;

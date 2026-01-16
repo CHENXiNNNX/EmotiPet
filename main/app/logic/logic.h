@@ -20,7 +20,7 @@ inline logic_config_t initLogicConfig()
     cfg.pressure = 0b01000;
     cfg.gyro     = 0b11001;
     cfg.sitive   = 0b10101;
-    cfg.camera   = 0b00010;
+    cfg.camera   = 0b01110;
     return cfg;
 }
 

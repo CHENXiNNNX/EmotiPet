@@ -1,5 +1,7 @@
 #include "chatbot.hpp"
 
+#include <memory>
+
 #include "esp_log.h"
 
 static const char* const TAG = "Chatbot";
@@ -9,115 +11,9 @@ namespace app
     namespace chatbot
     {
 
-        // ========== DefaultMessageHandler 实现 ==========
-
-        void DefaultMessageHandler::handleTransportInfo(const message::TransportInfoMessage& msg)
-        {
-            ESP_LOGI(TAG, "收到 transport_info 消息:");
-            ESP_LOGI(TAG, "  from: %s", msg.base.from.c_str());
-            ESP_LOGI(TAG, "  to: %s", msg.base.to.c_str());
-            ESP_LOGI(TAG, "  command: %s", msg.command.c_str());
-            ESP_LOGI(TAG, "  touch: %d", msg.data.touch);
-            ESP_LOGI(TAG, "  pressure: %.2f", msg.data.pressure);
-            ESP_LOGI(TAG, "  gyroscope: x=%.2f, y=%.2f, z=%.2f", msg.data.gyroscope.x,
-                     msg.data.gyroscope.y, msg.data.gyroscope.z);
-            ESP_LOGI(TAG, "  photosensitive: %d", msg.data.photosensitive);
-            // TODO: 实现数据上传处理逻辑
-        }
-
-        void DefaultMessageHandler::handleBluetoothInfo(const message::BluetoothInfoMessage& msg)
-        {
-            ESP_LOGI(TAG, "收到 bluetooth_info 消息:");
-            ESP_LOGI(TAG, "  from: %s", msg.base.from.c_str());
-            ESP_LOGI(TAG, "  to: %s", msg.base.to.c_str());
-            ESP_LOGI(TAG, "  rssi: %d", msg.data.rssi);
-            ESP_LOGI(TAG, "  opposite_mac: %s", msg.data.opposite_mac.c_str());
-            // TODO: 实现蓝牙信息处理逻辑
-        }
-
-        void DefaultMessageHandler::handleRecvInfo(const message::RecvInfoMessage& msg)
-        {
-            ESP_LOGI(TAG, "收到 recv_info 消息:");
-            ESP_LOGI(TAG, "  from: %s", msg.base.from.c_str());
-            ESP_LOGI(TAG, "  to: %s", msg.base.to.c_str());
-            ESP_LOGI(TAG, "  command: %s", msg.command.c_str());
-
-            // 解析command字段
-            message::SensorEnable enable;
-            if (enable.fromCommandString(msg.command))
-            {
-                ESP_LOGI(TAG, "  数据上传控制:");
-                ESP_LOGI(TAG, "    触摸: %s", enable.touch ? "上传" : "不上传");
-                ESP_LOGI(TAG, "    压力: %s", enable.pressure ? "上传" : "不上传");
-                ESP_LOGI(TAG, "    陀螺仪: %s", enable.gyroscope ? "上传" : "不上传");
-                ESP_LOGI(TAG, "    光敏: %s", enable.photosensitive ? "上传" : "不上传");
-                ESP_LOGI(TAG, "    摄像头: %s", enable.camera ? "上传" : "不上传");
-            }
-            // TODO: 实现数据上传控制逻辑，保存控制状态，用于后续数据上传时判断
-        }
-
-        void DefaultMessageHandler::handleMovInfo(const message::MovInfoMessage& msg)
-        {
-            ESP_LOGI(TAG, "收到 mov_info 消息:");
-            ESP_LOGI(TAG, "  from: %s", msg.base.from.c_str());
-            ESP_LOGI(TAG, "  to: %s", msg.base.to.c_str());
-            ESP_LOGI(TAG, "  舵机数量: %d", static_cast<int>(msg.data.size()));
-
-            for (const auto& pair : msg.data)
-            {
-                ESP_LOGI(TAG, "  %s:", pair.first.c_str());
-                ESP_LOGI(TAG, "    起始时间: %s", pair.second.start_time.c_str());
-                ESP_LOGI(TAG, "    角度: %d", pair.second.angle);
-                ESP_LOGI(TAG, "    持续时间: %d ms", pair.second.duration);
-            }
-            // TODO: 实现运动控制逻辑，调用舵机控制接口
-        }
-
-        void DefaultMessageHandler::handleListen(const message::ListenMessage& msg)
-        {
-            ESP_LOGI(TAG, "收到 listen 消息:");
-            ESP_LOGI(TAG, "  from: %s", msg.base.from.c_str());
-            ESP_LOGI(TAG, "  to: %s", msg.base.to.c_str());
-            // TODO: 实现音频监听准备逻辑，准备音频采集，开始上传音频数据
-        }
-
-        void DefaultMessageHandler::handlePlay(const message::PlayMessage& msg)
-        {
-            ESP_LOGI(TAG, "收到 play 消息:");
-            ESP_LOGI(TAG, "  from: %s", msg.base.from.c_str());
-            ESP_LOGI(TAG, "  to: %s", msg.base.to.c_str());
-            // TODO: 实现音频播放准备逻辑，准备接收并播放服务器下发的音频数据
-        }
-
-        void DefaultMessageHandler::handleError(const message::ErrorMessage& msg)
-        {
-            ESP_LOGE(TAG, "收到 error 消息:");
-            ESP_LOGE(TAG, "  from: %s", msg.base.from.c_str());
-            ESP_LOGE(TAG, "  to: %s", msg.base.to.c_str());
-            ESP_LOGE(TAG, "  错误码: %d", msg.data.code);
-            ESP_LOGE(TAG, "  错误信息: %s", msg.data.message.c_str());
-            // TODO: 实现错误处理逻辑，根据错误码执行相应的处理
-        }
-
         // ========== Chatbot 实现 ==========
 
-        Chatbot::Chatbot()
-            : handler_(nullptr), default_handler_(std::make_shared<DefaultMessageHandler>()),
-              ws_client_(nullptr), initialized_(false)
-        {
-            handler_ = default_handler_;
-        }
-
-        Chatbot::Chatbot(std::shared_ptr<handle::MessageHandler> handler)
-            : handler_(handler), default_handler_(nullptr), ws_client_(nullptr), initialized_(false)
-        {
-            if (!handler_)
-            {
-                ESP_LOGE(TAG, "消息处理器不能为空，使用默认处理器");
-                default_handler_ = std::make_shared<DefaultMessageHandler>();
-                handler_         = default_handler_;
-            }
-        }
+        Chatbot::Chatbot() : ws_client_(nullptr), initialized_(false) {}
 
         Chatbot::~Chatbot()
         {
@@ -130,12 +26,6 @@ namespace app
             {
                 ESP_LOGW(TAG, "Chatbot 已经初始化");
                 return true;
-            }
-
-            if (!handler_)
-            {
-                ESP_LOGE(TAG, "消息处理器未设置");
-                return false;
             }
 
             config_ = config;
@@ -239,7 +129,83 @@ namespace app
                 return false;
             }
 
-            std::string json_str = msg.toJson();
+            // 创建消息的副本以便回调可以修改
+            std::unique_ptr<message::Message> msg_copy;
+            message::Message*                 msg_ptr = nullptr;
+
+            // 根据消息类型创建副本（只处理设备需要发送的消息类型）
+            message::MessageType type = msg.getType();
+            switch (type)
+            {
+            case message::MessageType::TRANSPORT_INFO:
+            {
+                const auto& src  = static_cast<const message::TransportInfoMessage&>(msg);
+                auto        copy = std::make_unique<message::TransportInfoMessage>();
+                copy->base       = src.base;
+                copy->command    = src.command;
+                copy->data       = src.data;
+                msg_copy         = std::move(copy);
+                msg_ptr          = msg_copy.get();
+                break;
+            }
+            case message::MessageType::BLUETOOTH_INFO:
+            {
+                const auto& src  = static_cast<const message::BluetoothInfoMessage&>(msg);
+                auto        copy = std::make_unique<message::BluetoothInfoMessage>();
+                copy->base       = src.base;
+                copy->data       = src.data;
+                msg_copy         = std::move(copy);
+                msg_ptr          = msg_copy.get();
+                break;
+            }
+            case message::MessageType::LISTEN:
+            {
+                const auto& src  = static_cast<const message::ListenMessage&>(msg);
+                auto        copy = std::make_unique<message::ListenMessage>();
+                copy->base       = src.base;
+                msg_copy         = std::move(copy);
+                msg_ptr          = msg_copy.get();
+                break;
+            }
+            case message::MessageType::ERROR:
+            {
+                const auto& src  = static_cast<const message::ErrorMessage&>(msg);
+                auto        copy = std::make_unique<message::ErrorMessage>();
+                copy->base       = src.base;
+                copy->data       = src.data;
+                msg_copy         = std::move(copy);
+                msg_ptr          = msg_copy.get();
+                break;
+            }
+            default:
+                ESP_LOGE(TAG, "设备不支持发送此消息类型: %d", static_cast<int>(type));
+                return false;
+            }
+
+            if (!msg_ptr)
+            {
+                ESP_LOGE(TAG, "消息副本创建失败");
+                return false;
+            }
+
+            // 调用发送回调（可以修改消息、填充字段等）
+            std::string json_str;
+            if (send_callback_)
+            {
+                json_str = send_callback_(*msg_ptr);
+                // 如果回调返回空字符串，表示取消发送
+                if (json_str.empty())
+                {
+                    ESP_LOGD(TAG, "发送回调取消发送");
+                    return false;
+                }
+            }
+            else
+            {
+                // 没有回调时，直接序列化
+                json_str = msg_ptr->toJson();
+            }
+
             if (json_str.empty())
             {
                 ESP_LOGE(TAG, "消息序列化失败");
@@ -299,40 +265,19 @@ namespace app
             return true;
         }
 
-        bool Chatbot::sendImage(const uint8_t* image_data, size_t image_len, int timeout_ms)
+        void Chatbot::setSendCallback(SendCallback&& callback)
         {
-            if (!image_data || image_len == 0)
-            {
-                ESP_LOGE(TAG, "图片数据无效");
-                return false;
-            }
-
-            // 验证是否为JPEG格式（检查文件头）
-            if (image_len < 3 || image_data[0] != 0xFF || image_data[1] != 0xD8 ||
-                image_data[2] != 0xFF)
-            {
-                ESP_LOGW(TAG, "警告：数据可能不是有效的JPEG格式");
-            }
-
-            ESP_LOGI(TAG, "发送图片数据，长度: %d 字节", image_len);
-            return sendBinary(image_data, image_len, timeout_ms);
+            send_callback_ = std::move(callback);
         }
 
-        bool Chatbot::sendAudio(const uint8_t* audio_data, size_t audio_len, int timeout_ms)
+        void Chatbot::setReceiveCallback(ReceiveCallback&& callback)
         {
-            if (!audio_data || audio_len == 0)
-            {
-                ESP_LOGE(TAG, "音频数据无效");
-                return false;
-            }
-
-            ESP_LOGI(TAG, "发送音频数据，长度: %d 字节", audio_len);
-            return sendBinary(audio_data, audio_len, timeout_ms);
+            receive_callback_ = std::move(callback);
         }
 
         std::string Chatbot::getDeviceMacAddress() const
         {
-            return message::getDeviceMacAddress();
+            return app::chatbot::message::getDeviceMacAddress();
         }
 
         void Chatbot::onWebSocketConnected()
@@ -360,17 +305,19 @@ namespace app
             // 将接收到的数据转换为字符串
             std::string json_str(reinterpret_cast<const char*>(event.data), event.length);
 
-            ESP_LOGI(TAG, "收到文本消息:");
-            ESP_LOGI(TAG, "%s", json_str.c_str());
+            ESP_LOGI(TAG, "收到文本消息，长度: %d", event.length);
 
-            // 使用消息处理器处理消息
-            if (handler_)
+            // 调用接收回调（统一处理消息解析、类型分发等）
+            if (receive_callback_)
             {
-                handler_->handleMessage(json_str);
+                if (!receive_callback_(json_str))
+                {
+                    ESP_LOGW(TAG, "接收回调处理失败");
+                }
             }
             else
             {
-                ESP_LOGW(TAG, "消息处理器未设置");
+                ESP_LOGW(TAG, "接收回调未设置");
             }
         }
 

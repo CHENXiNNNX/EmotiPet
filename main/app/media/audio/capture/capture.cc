@@ -136,7 +136,21 @@ namespace app
                     }
 
                     // 启用音频输入
-                    audio_->enableInput(true);
+                    bool input_enabled = false;
+                    for (int retry = 0; retry < 3; retry++)
+                    {
+                        if (audio_->enableInput(true))
+                        {
+                            input_enabled = true;
+                            break;
+                        }
+
+                        if (retry < 2)
+                        {
+                            ESP_LOGW(TAG, "启用音频输入失败，%d 毫秒后重试...", (retry + 1) * 100);
+                            vTaskDelay(pdMS_TO_TICKS((retry + 1) * 100));
+                        }
+                    }
 
                     // 创建采集任务
                     sys::task::Config task_config =
