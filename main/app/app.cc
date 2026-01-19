@@ -158,6 +158,18 @@ namespace app
         // 启动 M0404 压力传感器数据采集（非阻塞）
         if (m0404_.isInitialized())
         {
+            // 执行零点标定（将当前状态作为零点）
+            // 采集100次数据，每次间隔100ms，取平均值作为零点
+            ESP_LOGI(TAG, "开始执行M0404零点标定...");
+            if (m0404_.calibrateZeroPoint(100, 100))
+            {
+                ESP_LOGI(TAG, "M0404零点标定完成");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "M0404零点标定失败");
+            }
+
             m0404_.setPressureStatusCallback(
                 [](int pressure_status)
                 {
@@ -168,6 +180,9 @@ namespace app
                     // }
                     // int status = m0404_.getCurrentPressureStatus();
                 });
+
+            // 启用默认触摸状态日志输出
+            m0404_.enableDefaultTouchStateLogging();
 
             // 启动后台数据采集任务（每10秒采集一次）
             if (m0404_.startDataCollection(10000))
