@@ -42,6 +42,8 @@ namespace app
             ws_config.network_timeout_ms      = config_.network_timeout_ms;
             ws_config.disable_auto_reconnect  = config_.disable_auto_reconnect;
             ws_config.disable_pingpong_discon = config_.disable_pingpong_discon;
+            ws_config.use_global_ca_store     = config_.use_global_ca_store;
+            ws_config.skip_cert_verification  = config_.skip_cert_verification;
 
             if (!ws_client_->init(ws_config))
             {

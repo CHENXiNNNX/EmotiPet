@@ -370,7 +370,7 @@ namespace app
                 // 创建数据采集任务
                 app::sys::task::Config task_config;
                 task_config.name       = "qmi8658a_collect";
-                task_config.stack_size = 4096;
+                task_config.stack_size = 2 * 1024;
                 task_config.priority   = app::sys::task::Priority::NORMAL;
                 task_config.core_id    = -1;
                 task_config.delay_ms   = 0;

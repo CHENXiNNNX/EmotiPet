@@ -211,6 +211,11 @@ namespace app
             return;
         }
 
+        if (!initOpus())
+        {
+            ESP_LOGW(TAG, "Opus 编码器初始化失败，音频上传功能将不可用");
+        }
+
         if (!initQMI8658A(getI2CBusHandle()))
         {
             ESP_LOGW(TAG, "QMI8658A 初始化失败");
@@ -378,12 +383,14 @@ namespace app
         if (!chatbot_initialized_)
         {
             // 从配置中读取服务器地址和端口
-            // const std::string server_host = "192.168.50.100";
-            // const int         server_port  = 8081;
-            // const std::string path         = "/ws/device/{MAC}";
+            // 生产服务器配置
+            // const std::string server_host = "robot001.lmkids.com";
+            // const std::string path        = "/ws/device/{MAC}";
+            // const std::string protocol    = "wss"; // 使用 WSS
 
             const std::string server_host = "192.168.50.68";
-            const int         server_port = 8080;
+            const int         server_port  = 8080;
+            const std::string protocol    = "ws";
 
             if (!initChatbot(server_host, server_port, 5, 5, 10000))
             {
@@ -916,11 +923,17 @@ namespace app
 
     bool App::initChatbot(const std::string& server_host, int server_port, int ping_interval_sec,
                           int pingpong_timeout_sec, int reconnect_timeout_ms,
-                          const std::string& path)
+                          const std::string& path, const std::string& protocol)
     {
         // 构建WebSocket URI
         std::ostringstream uri_stream;
-        uri_stream << "ws://" << server_host << ":" << server_port;
+        uri_stream << protocol << "://" << server_host;
+        
+        // 如果指定了端口，添加到URI（wss默认443，ws默认80，通常不需要显式指定）
+        if (server_port > 0)
+        {
+            uri_stream << ":" << server_port;
+        }
 
         // 如果提供了路径，添加到URI
         if (!path.empty())
@@ -1030,6 +1043,28 @@ namespace app
         return true;
     }
 
+    bool App::initOpus()
+    {
+        media::audio::process::opus::encode::EncoderConfig opus_cfg;
+        opus_cfg.sample_rate      = 16000;
+        opus_cfg.channel          = 1;     // 单声道
+        opus_cfg.bitrate          = 32000; // 32kbps
+        opus_cfg.complexity       = 5;
+        opus_cfg.frame_duration   = ESP_OPUS_ENC_FRAME_DURATION_20_MS;
+        opus_cfg.application_mode = ESP_OPUS_ENC_APPLICATION_VOIP;
+
+        opus_encoder_ = std::make_unique<media::audio::process::opus::encode::OpusEncoder>(opus_cfg);
+
+        if (!opus_encoder_ || !opus_encoder_->isValid())
+        {
+            ESP_LOGE(TAG, "Opus 编码器初始化失败");
+            return false;
+        }
+
+        ESP_LOGI(TAG, "Opus 编码器初始化成功");
+        return true;
+    }
+
     bool App::initCamera(i2c_master_bus_handle_t i2c_handle)
     {
         if (!i2c_handle)
@@ -1115,19 +1150,51 @@ namespace app
                 {
                     ESP_LOGI(TAG, "检测到语音");
                 }
+                else
+                {
+                    // 语音结束，重置标志，重置编码器状态
+                    listen_message_sent_ = false;
+                    if (opus_encoder_)
+                    {
+                        opus_encoder_->reset();
+                    }
+                }
             });
 
         // 设置 AFE 的音频输出回调（处理后的音频）
         afe_->setAudioOutputCallback(
-            [](const int16_t* data, size_t samples)
+            [this](const int16_t* data, size_t samples)
             {
-                // 处理后的音频数据可以用于：
-                // 1. 音频上传（OPUS 编码）
-                // 2. 唤醒词检测
-                // 3. 其他音频处理
-                // 这里暂时不处理，后续可以在 handleListen 中启用上传
-                (void)data;
-                (void)samples;
+                // 只有在检测到语音、已连接且处于 RUNNING 状态时才上传音频
+                // 注意：这里可以根据需要放宽状态限制，比如在 WAKEWORD_WAIT 也可以上传用于云端校验
+                if (isSpeaking() && chatbot_.isConnected() && current_state_ == DeviceState::RUNNING)
+                {
+                    // 1. 如果是本次语音的首帧，先发送 listen 消息
+                    if (!listen_message_sent_)
+                    {
+                        sendListenMessage();
+                        listen_message_sent_ = true;
+                    }
+
+                    // 2. 将 PCM 数据喂给 Opus 编码器进行编码
+                    if (opus_encoder_)
+                    {
+                        const uint8_t* encoded_data = nullptr;
+                        size_t         encoded_len  = 0;
+
+                        // encode 方法内部会处理样本数累积，凑够一帧后才会输出 encoded_len > 0
+                        if (opus_encoder_->encode(reinterpret_cast<const uint8_t*>(data),
+                                                  samples * sizeof(int16_t), &encoded_data,
+                                                  &encoded_len))
+                        {
+                            // 3. 如果成功编码出一帧 Opus 数据，通过 WebSocket 发送二进制数据
+                            if (encoded_len > 0 && encoded_data != nullptr)
+                            {
+                                chatbot_.sendBinary(encoded_data, encoded_len);
+                            }
+                        }
+                    }
+                }
             });
 
         return true;

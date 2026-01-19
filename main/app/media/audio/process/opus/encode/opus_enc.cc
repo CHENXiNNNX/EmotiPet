@@ -186,7 +186,10 @@ namespace app
                             // 准备输入帧
                             esp_audio_enc_in_frame_t in_frame = {};
                             in_frame.buffer                   = input_buffer_.get();
-                            in_frame.len = static_cast<uint32_t>(input_buffer_used_);
+                            // 确保输入长度是帧长度的整数倍
+                            size_t encodeable_len =
+                                (input_buffer_used_ / frame_in_size) * frame_in_size;
+                            in_frame.len = static_cast<uint32_t>(encodeable_len);
 
                             // 准备输出帧
                             esp_audio_enc_out_frame_t out_frame = {};

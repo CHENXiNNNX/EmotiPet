@@ -12,6 +12,7 @@
 #include "device/led/led.hpp"
 #include "media/audio/audio.hpp"
 #include "media/audio/process/afe/afe.hpp"
+#include "media/audio/process/opus/encode/opus_enc.hpp"
 #include "media/audio/wakeword/wakeword.hpp"
 #include "media/camera/camera.hpp"
 #include "network/network.hpp"
@@ -123,12 +124,14 @@ namespace app
                        int baud_rate = 115200); // 初始化 M0404 压力传感器
         bool initProvision();                   // 初始化配网管理器
         bool initNTP();                         // 初始化NTP管理器
-        bool initChatbot(const std::string& server_host, int server_port,
+        bool initChatbot(const std::string& server_host, int server_port = -1,
                          int ping_interval_sec = 10, int pingpong_timeout_sec = 10,
                          int                reconnect_timeout_ms = 10000,
-                         const std::string& path                 = ""); // 初始化Chatbot
+                         const std::string& path                 = "",
+                         const std::string& protocol             = "ws"); // 初始化Chatbot (protocol: "ws" or "wss")
         bool initAudio(i2c_master_bus_handle_t i2c_handle,
                        int                     sample_rate = 16000);             // 初始化音频
+        bool initOpus();                                     // 初始化 Opus 编码器
         bool initAfe();                                      // 初始化AFE（音频前端处理）
         bool initCamera(i2c_master_bus_handle_t i2c_handle); // 初始化摄像头
         bool startAudioCapture();                            // 启动音频采集
@@ -186,6 +189,7 @@ namespace app
         media::audio::Audio                              audio_;
         media::camera::Camera                            camera_;
         std::unique_ptr<media::audio::process::afe::Afe> afe_;
+        std::unique_ptr<media::audio::process::opus::encode::OpusEncoder> opus_encoder_;
         chatbot::Chatbot                                 chatbot_;
         chatbot::handle::MessageSender                   message_sender_;
         chatbot::handle::MessageReceiver                 message_receiver_;
@@ -219,6 +223,9 @@ namespace app
 
         // 唤醒词检测状态
         bool wakeword_detected_{false}; // 是否检测到唤醒词
+
+        // 音频上传状态
+        bool listen_message_sent_{false}; // 是否已发送过 listen 消息
     };
 
 } // namespace app

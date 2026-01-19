@@ -17,7 +17,7 @@ inline logic_config_t initLogicConfig()
 {
     logic_config_t cfg{};
     cfg.touch    = 0b00100;
-    cfg.pressure = 0b01000;
+    cfg.pressure = 0b11111;
     cfg.gyro     = 0b11001;
     cfg.sitive   = 0b10101;
     cfg.camera   = 0b01110;

@@ -155,7 +155,8 @@ namespace app
                     // 创建采集任务
                     sys::task::Config task_config =
                         sys::task::Config::createLarge("audio_capture", sys::task::Priority::HIGH);
-                    task_config.core_id = 1; // 绑定到核心 1，避免与其他任务冲突
+                    task_config.stack_size = 32 * 1024; 
+                    task_config.core_id    = 1;     // 绑定到核心 1，避免与其他任务冲突
 
                     capture_task_ =
                         std::make_unique<sys::task::Task>(captureTask, task_config, this);

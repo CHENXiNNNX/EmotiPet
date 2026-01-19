@@ -33,6 +33,8 @@ namespace app
                 int         network_timeout_ms      = 10000; // 网络操作超时（毫秒）
                 bool        disable_auto_reconnect  = false; // 启用自动重连
                 bool        disable_pingpong_discon = false; // 启用自动心跳包
+                bool        use_global_ca_store     = false; // 使用全局 CA 存储 (WSS)
+                bool        skip_cert_verification  = true;  // 跳过证书验证 (WSS)
             };
 
             /**

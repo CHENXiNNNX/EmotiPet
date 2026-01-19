@@ -4,6 +4,7 @@
 
 #include "esp_log.h"
 #include "esp_websocket_client.h"
+#include "esp_crt_bundle.h"
 
 static const char* const TAG = "WebSocket";
 
@@ -71,24 +72,46 @@ namespace app
                     ws_cfg.disable_auto_reconnect      = config.disable_auto_reconnect;
                     ws_cfg.disable_pingpong_discon     = config.disable_pingpong_discon;
                     ws_cfg.skip_cert_common_name_check = config.skip_cert_common_name_check;
+                    ws_cfg.use_global_ca_store        = config.use_global_ca_store;
 
-                    if (config.cert_pem != nullptr && config.cert_len > 0)
+                    // 配置 WSS/TLS 验证选项
+                    if (!config.uri.empty() && (config.uri.find("wss://") == 0))
                     {
-                        ws_cfg.cert_pem = config.cert_pem;
-                        ws_cfg.cert_len = config.cert_len;
+                        if (config.cert_pem != nullptr && config.cert_len > 0)
+                        {
+                            // 使用自定义证书
+                            ws_cfg.cert_pem = config.cert_pem;
+                            ws_cfg.cert_len = config.cert_len;
+                            ESP_LOGI(TAG, "WSS 连接：使用自定义证书");
+                        }
+                        else if (config.skip_cert_verification)
+                        {
+                            // 跳过验证模式：挂载 bundle 但跳过名称检查
+                            // 这样可以绕过 "No server verification option set" 检查
+                            ws_cfg.crt_bundle_attach          = esp_crt_bundle_attach;
+                            ws_cfg.skip_cert_common_name_check = true;
+                            ESP_LOGW(TAG, "WSS 连接：跳过证书验证（仅用于测试）");
+                        }
+                        else
+                        {
+                            // 默认模式：使用 ESP32 自带的 CA 证书包进行标准验证
+                            ws_cfg.crt_bundle_attach = esp_crt_bundle_attach;
+                            ESP_LOGI(TAG, "WSS 连接：使用系统证书包验证");
+                        }
                     }
 
-                    // 判断传输类型（如果 URI 不为空）
+                    // 自动判断传输类型（根据 URI 协议或端口）
                     if (!config.uri.empty())
                     {
+                        // 根据 URI 协议自动选择传输层
                         ws_cfg.transport =
-                            config.uri.find("wss://") == 0 || config.uri.find("https://") == 0
+                            (config.uri.find("wss://") == 0 || config.uri.find("https://") == 0)
                                 ? WEBSOCKET_TRANSPORT_OVER_SSL
                                 : WEBSOCKET_TRANSPORT_OVER_TCP;
                     }
                     else
                     {
-                        // 如果 URI 为空，默认使用 TCP（可以通过 port 判断，443 通常为 SSL）
+                        // URI 为空时，根据端口判断（443 通常为 SSL）
                         ws_cfg.transport = (config.port == 443) ? WEBSOCKET_TRANSPORT_OVER_SSL
                                                                 : WEBSOCKET_TRANSPORT_OVER_TCP;
                     }
@@ -158,34 +181,48 @@ namespace app
 
             void WebSocketClient::deinit()
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                bool should_stop = false;
 
-                if (!initialized_)
                 {
-                    return;
+                    std::lock_guard<std::mutex> lock(mutex_);
+
+                    if (!initialized_)
+                    {
+                        return;
+                    }
+
+                    // 标记需要停止连接
+                    if (state_ == State::CONNECTED || state_ == State::CONNECTING)
+                    {
+                        should_stop = true;
+                    }
                 }
 
-                // 如果已连接，先断开
-                if (state_ == State::CONNECTED || state_ == State::CONNECTING)
+                // 在锁外停止连接（避免死锁）
+                if (should_stop && client_handle_ != nullptr)
                 {
-                    disconnect();
+                    esp_websocket_client_stop(client_handle_);
                 }
 
-                if (client_handle_ != nullptr)
                 {
-                    esp_websocket_client_destroy(client_handle_);
-                    client_handle_ = nullptr;
+                    std::lock_guard<std::mutex> lock(mutex_);
+
+                    if (client_handle_ != nullptr)
+                    {
+                        esp_websocket_client_destroy(client_handle_);
+                        client_handle_ = nullptr;
+                    }
+
+                    initialized_ = false;
+                    state_       = State::IDLE;
+
+                    // 清空回调
+                    connected_callback_    = nullptr;
+                    disconnected_callback_ = nullptr;
+                    data_callback_         = nullptr;
+                    error_callback_        = nullptr;
+                    state_callback_        = nullptr;
                 }
-
-                initialized_ = false;
-                state_       = State::IDLE;
-
-                // 清空回调
-                connected_callback_    = nullptr;
-                disconnected_callback_ = nullptr;
-                data_callback_         = nullptr;
-                error_callback_        = nullptr;
-                state_callback_        = nullptr;
 
                 ESP_LOGI(TAG, "WebSocket 客户端已反初始化");
             }
@@ -260,6 +297,7 @@ namespace app
             {
                 StateCallback state_cb;
                 bool          should_stop = false;
+                esp_websocket_client_handle_t handle_to_stop = nullptr;
 
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
@@ -274,26 +312,32 @@ namespace app
                         return false;
                     }
 
-                    should_stop = true;
+                    should_stop     = true;
+                    handle_to_stop  = client_handle_;
+                    state_cb        = state_callback_;
                 }
 
-                // 在锁外调用 esp_websocket_client_stop
-                if (should_stop)
+                // 在锁外调用 esp_websocket_client_stop（避免死锁）
+                if (should_stop && handle_to_stop != nullptr)
                 {
-                    esp_err_t ret = esp_websocket_client_stop(client_handle_);
+                    esp_err_t ret = esp_websocket_client_stop(handle_to_stop);
                     if (ret != ESP_OK)
                     {
                         ESP_LOGE(TAG, "断开 WebSocket 连接失败: %s", esp_err_to_name(ret));
                         return false;
                     }
 
-                    // 设置状态（在锁内）
+                    // 更新状态（在锁内）
                     {
                         std::lock_guard<std::mutex> lock(mutex_);
                         if (state_ != State::DISCONNECTED)
                         {
                             state_   = State::DISCONNECTED;
                             state_cb = state_callback_;
+                        }
+                        else
+                        {
+                            state_cb = nullptr;
                         }
                     }
 
@@ -312,23 +356,30 @@ namespace app
 
             int WebSocketClient::sendText(const std::string& text, int timeout_ms)
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                esp_websocket_client_handle_t handle = nullptr;
 
-                if (!initialized_ || client_handle_ == nullptr)
                 {
-                    ESP_LOGE(TAG, "WebSocket 客户端未初始化");
-                    return -1;
+                    std::lock_guard<std::mutex> lock(mutex_);
+
+                    if (!initialized_ || client_handle_ == nullptr)
+                    {
+                        ESP_LOGE(TAG, "WebSocket 客户端未初始化");
+                        return -1;
+                    }
+
+                    if (state_ != State::CONNECTED)
+                    {
+                        ESP_LOGE(TAG, "WebSocket 未连接，无法发送数据");
+                        return -1;
+                    }
+
+                    handle = client_handle_;
                 }
 
-                if (state_ != State::CONNECTED)
-                {
-                    ESP_LOGE(TAG, "WebSocket 未连接，无法发送数据");
-                    return -1;
-                }
-
+                // 在锁外发送数据（避免长时间持锁）
                 TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
                 int        sent          = esp_websocket_client_send_text(
-                    client_handle_, text.c_str(), static_cast<int>(text.length()), timeout_ticks);
+                    handle, text.c_str(), static_cast<int>(text.length()), timeout_ticks);
 
                 if (sent < 0)
                 {
@@ -344,24 +395,30 @@ namespace app
 
             int WebSocketClient::sendBinary(const uint8_t* data, size_t len, int timeout_ms)
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                esp_websocket_client_handle_t handle = nullptr;
 
-                if (!initialized_ || client_handle_ == nullptr)
                 {
-                    ESP_LOGE(TAG, "WebSocket 客户端未初始化");
-                    return -1;
+                    std::lock_guard<std::mutex> lock(mutex_);
+
+                    if (!initialized_ || client_handle_ == nullptr)
+                    {
+                        ESP_LOGE(TAG, "WebSocket 客户端未初始化");
+                        return -1;
+                    }
+
+                    if (state_ != State::CONNECTED)
+                    {
+                        ESP_LOGE(TAG, "WebSocket 未连接，无法发送数据");
+                        return -1;
+                    }
+
+                    handle = client_handle_;
                 }
 
-                if (state_ != State::CONNECTED)
-                {
-                    ESP_LOGE(TAG, "WebSocket 未连接，无法发送数据");
-                    return -1;
-                }
-
+                // 在锁外发送数据（避免长时间持锁，特别是大数据包）
                 TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
-                int        sent          = esp_websocket_client_send_bin(client_handle_,
-                                                                         reinterpret_cast<const char*>(data),
-                                                                         static_cast<int>(len), timeout_ticks);
+                int        sent          = esp_websocket_client_send_bin(
+                    handle, reinterpret_cast<const char*>(data), static_cast<int>(len), timeout_ticks);
 
                 if (sent < 0)
                 {

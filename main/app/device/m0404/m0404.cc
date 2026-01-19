@@ -1,11 +1,19 @@
 #include "m0404.hpp"
 
 #include <cstring>
+#include <cstdlib>
+#include <cstdint>
+#include <climits>
+#include <vector>
+#include <algorithm>
 #include <esp_log.h>
 #include "system/task/task.hpp"
 #include "driver/uart.h"
+#include "nvs.h"
 
 static const char* const TAG = "M0404";
+static const char* const NVS_NAMESPACE = "m0404";
+static const char* const NVS_KEY_ZERO_POINT = "zero_point";
 
 namespace app
 {
@@ -66,8 +74,30 @@ namespace app
                 }
 
                 initialized_ = true;
-                ESP_LOGI(TAG, "M0404 压力传感器初始化成功 (UART%d, 波特率: %d)", uart_num_,
-                         baud_rate_);
+                
+                // 初始化零点值
+                zero_points_.fill(0);
+                zero_point_calibrated_ = false;
+                
+                // 初始化触摸检测
+                last_row_pressures_.fill(0);
+                row_active_history_.fill(false);
+                row_activate_time_.fill(0); // 0表示未激活
+                last_touch_detect_time_ = 0;
+                last_activated_row_ = -1;
+                current_activated_row_ = -1;
+                
+                // 尝试从NVS加载零点值
+                if (loadZeroPointFromNVS())
+                {
+                    ESP_LOGI(TAG, "已从NVS加载零点标定值");
+                }
+                else
+                {
+                    ESP_LOGI(TAG, "未找到保存的零点标定值，需要执行标定");
+                }
+                
+                ESP_LOGI(TAG, "M0404 压力传感器初始化成功 (UART%d, 波特率: %d)", uart_num_, baud_rate_);
                 return true;
             }
 
@@ -300,8 +330,78 @@ namespace app
                 if (!result)
                 {
                     ESP_LOGW(TAG, "[错误] 数据包解析失败");
+                    return false;
                 }
-                return result;
+                
+                // 应用零点补偿
+                applyZeroPointCompensation(data);
+                
+                return true;
+            }
+
+            bool M0404::readRaw(PressureData& data)
+            {
+                if (!initialized_)
+                {
+                    ESP_LOGE(TAG, "传感器未初始化");
+                    return false;
+                }
+
+                // 检查缓冲区中是否有数据
+                size_t available = 0;
+                uart_get_buffered_data_len(uart_num_, &available);
+
+                // 如果缓冲区数据不足一个完整包，等待数据到达
+                int read_len = 0;
+                if (available < PACKET_SIZE)
+                {
+                    read_len = uart_read_bytes(uart_num_, rx_buffer_, sizeof(rx_buffer_),
+                                              500 / portTICK_PERIOD_MS);
+                }
+                else
+                {
+                    read_len = uart_read_bytes(uart_num_, rx_buffer_, sizeof(rx_buffer_), 0);
+                }
+
+                if (read_len <= 0 || read_len < PACKET_SIZE)
+                {
+                    return false;
+                }
+
+                // 查找数据包起始位置（0xAA 0x01）
+                size_t packet_start = 0;
+                bool   found        = false;
+
+                for (size_t i = 0; i <= (size_t)read_len - PACKET_SIZE; i++)
+                {
+                    if (rx_buffer_[i] == PACKET_HEADER_1 && rx_buffer_[i + 1] == PACKET_HEADER_2)
+                    {
+                        packet_start = i;
+                        found        = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    return false;
+                }
+
+                // 如果找到的包不是从缓冲区开始，需要确保有完整的数据
+                if (packet_start + PACKET_SIZE > (size_t)read_len)
+                {
+                    int needed = PACKET_SIZE - (read_len - packet_start);
+                    int additional = uart_read_bytes(uart_num_, &rx_buffer_[read_len], needed,
+                                                     200 / portTICK_PERIOD_MS);
+                    if (additional < needed)
+                    {
+                        return false;
+                    }
+                    read_len += additional;
+                }
+
+                // 解析数据包（不应用零点补偿）
+                return parsePacket(&rx_buffer_[packet_start], PACKET_SIZE, data);
             }
 
             bool M0404::startDataCollection(uint32_t interval_ms)
@@ -323,7 +423,7 @@ namespace app
                 // 创建数据采集任务
                 app::sys::task::Config task_config;
                 task_config.name       = "m0404_collect";
-                task_config.stack_size = 4096;
+                task_config.stack_size = 2 * 1024;
                 task_config.priority   = app::sys::task::Priority::NORMAL;
                 task_config.core_id    = -1;
                 task_config.delay_ms   = 0;
@@ -393,14 +493,14 @@ namespace app
                     {
                         // 更新最新的压力数据（供外部获取）
                         latest_data_ = data;
-
+                        
                         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-                        // 判断是否有压力（16个压力值中任何一个>10）
+                        // 判断是否有压力（16个压力值中任何一个超过死区阈值）
                         bool has_pressure = false;
                         for (size_t i = 0; i < PRESSURE_COUNT; i++)
                         {
-                            if (data.pressures[i] > 0)
+                            if (data.pressures[i] > DEAD_ZONE_THRESHOLD)
                             {
                                 has_pressure = true;
                                 break;
@@ -431,11 +531,12 @@ namespace app
                         }
 
                         // 只在有压力时输出（不按固定间隔输出）
-                        // 检查是否有任何传感器的值大于阈值（5）
+                        // 检查是否有任何传感器的值超过死区阈值
                         bool has_above_threshold = false;
                         for (size_t i = 0; i < PRESSURE_COUNT; i++)
                         {
-                            if (data.pressures[i] > 5 || (has_last_data && last_pressures[i] > 5))
+                            if (data.pressures[i] > DEAD_ZONE_THRESHOLD || 
+                                (has_last_data && last_pressures[i] > DEAD_ZONE_THRESHOLD))
                             {
                                 has_above_threshold = true;
                                 break;
@@ -444,41 +545,23 @@ namespace app
 
                         if (has_pressure && has_change && has_above_threshold)
                         {
-                            // 只显示有压力的传感器，且值大于阈值（5）
-                            // bool has_output = false;
+                            // 日志输出已注释
+                            // ESP_LOGI(TAG, "========== M0404 压力数据 ==========");
+                            // ESP_LOGI(TAG, "  压力状态: 有压力");
                             // for (size_t i = 0; i < PRESSURE_COUNT; i++)
-                            //{
-                            //    // 显示：1) 当前值 > 5，或 2) 值有变化且（当前值或上次值）> 5
-                            //    bool current_above = data.pressures[i] > 5;
-                            //    bool last_above = has_last_data && last_pressures[i] > 5;
-                            //    bool value_changed = has_last_data && data.pressures[i] !=
-                            //    last_pressures[i];
-                            //
-                            //    if (current_above || (value_changed && last_above))
-                            //    {
-                            //        if (!has_output)
-                            //        {
-                            //            ESP_LOGI(TAG, "========== M0404 压力数据 ==========");
-                            //            ESP_LOGI(TAG, "  压力状态: 有压力");
-                            //            has_output = true;
-                            //        }
-                            //        if (has_last_data && data.pressures[i] != last_pressures[i])
-                            //        {
-                            //            ESP_LOGI(TAG, "  传感器[%2lu]: %5u -> %5u",
-                            //                     (unsigned long)i, last_pressures[i],
-                            //                     data.pressures[i]);
-                            //        }
-                            //        else if (data.pressures[i] > 5)
-                            //        {
-                            //            ESP_LOGI(TAG, "  传感器[%2lu]: %5u",
-                            //                     (unsigned long)i, data.pressures[i]);
-                            //        }
-                            //    }
-                            //}
-                            // if (has_output)
-                            //{
-                            //    ESP_LOGI(TAG, "==========================================");
-                            //}
+                            // {
+                            //     if (has_last_data && data.pressures[i] != last_pressures[i])
+                            //     {
+                            //         ESP_LOGI(TAG, "  传感器[%2lu]: %5u -> %5u", 
+                            //                  (unsigned long)i, last_pressures[i], data.pressures[i]);
+                            //     }
+                            //     else if (data.pressures[i] > DEAD_ZONE_THRESHOLD)
+                            //     {
+                            //         ESP_LOGI(TAG, "  传感器[%2lu]: %5u", 
+                            //                  (unsigned long)i, data.pressures[i]);
+                            //     }
+                            // }
+                            // ESP_LOGI(TAG, "==========================================");
 
                             // 保存当前值
                             last_pressures = data.pressures;
@@ -493,6 +576,12 @@ namespace app
                                 last_pressures = data.pressures;
                                 has_last_data  = true;
                             }
+                        }
+
+                        // 检测触摸状态和方向（有压力时）
+                        if (has_pressure)
+                        {
+                            detectTouchState(data);
                         }
 
                         // 触发回调（只在状态变化时，且只在有压力时输出）
@@ -531,6 +620,325 @@ namespace app
                 ESP_LOGI(TAG, "压力传感器数据采集任务已停止");
             }
 
-        } // namespace m0404
-    } // namespace device
+            bool M0404::calibrateZeroPoint(uint32_t sample_count, uint32_t sample_interval_ms)
+            {
+                if (!initialized_)
+                {
+                    ESP_LOGE(TAG, "传感器未初始化，无法执行零点标定");
+                    return false;
+                }
+
+                ESP_LOGI(TAG, "开始零点标定，采集次数: %lu, 间隔: %lu ms", (unsigned long)sample_count, (unsigned long)sample_interval_ms);
+
+                // 累加数组和统计信息
+                std::array<uint32_t, PRESSURE_COUNT> sum;
+                std::array<uint16_t, PRESSURE_COUNT> min_val, max_val;
+                sum.fill(0);
+                min_val.fill(UINT16_MAX);
+                max_val.fill(0);
+                uint32_t valid_samples = 0;
+
+                // 采集数据
+                for (uint32_t i = 0; i < sample_count; i++)
+                {
+                    PressureData data;
+                    // 使用readRaw读取原始值（不应用零点补偿）
+                    if (readRaw(data))
+                    {
+                        // 累加原始值，并记录最小最大值
+                        for (size_t j = 0; j < PRESSURE_COUNT; j++)
+                        {
+                            sum[j] += data.pressures[j];
+                            if (data.pressures[j] < min_val[j])
+                            {
+                                min_val[j] = data.pressures[j];
+                            }
+                            if (data.pressures[j] > max_val[j])
+                            {
+                                max_val[j] = data.pressures[j];
+                            }
+                        }
+                        valid_samples++;
+                    }
+                    
+                    if (i < sample_count - 1) // 最后一次不需要延迟
+                    {
+                        app::sys::task::TaskManager::delayMs(sample_interval_ms);
+                    }
+                }
+
+                if (valid_samples == 0)
+                {
+                    ESP_LOGE(TAG, "零点标定失败：未能采集到有效数据");
+                    return false;
+                }
+
+                // 计算平均值，并加上波动范围的一半作为安全余量
+                // 这样可以确保标定后的值更稳定
+                for (size_t i = 0; i < PRESSURE_COUNT; i++)
+                {
+                    uint32_t avg = sum[i] / valid_samples;
+                    uint16_t range = max_val[i] - min_val[i];
+                    // 零点值 = 平均值 + 波动范围的一半，这样标定后相对值会更接近0
+                    zero_points_[i] = (uint16_t)(avg + range / 2);
+                }
+
+                zero_point_calibrated_ = true;
+
+                // 保存到NVS
+                if (saveZeroPointToNVS())
+                {
+                    ESP_LOGI(TAG, "零点标定值已保存到NVS");
+                }
+                else
+                {
+                    ESP_LOGW(TAG, "保存零点标定值到NVS失败");
+                }
+
+                // 打印标定结果
+                ESP_LOGI(TAG, "零点标定完成（有效样本数: %lu）:", (unsigned long)valid_samples);
+                for (size_t i = 0; i < PRESSURE_COUNT; i++)
+                {
+                    uint32_t avg = sum[i] / valid_samples;
+                    ESP_LOGI(TAG, "  传感器[%2lu]: 平均值=%5u, 范围=[%5u-%5u], 零点值=%5u", 
+                             (unsigned long)i, avg, min_val[i], max_val[i], zero_points_[i]);
+                }
+
+                return true;
+            }
+
+            bool M0404::clearZeroPoint()
+            {
+                zero_points_.fill(0);
+                zero_point_calibrated_ = false;
+
+                // 从NVS删除
+                nvs_handle_t nvs_handle;
+                esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+                if (ret == ESP_OK)
+                {
+                    nvs_erase_key(nvs_handle, NVS_KEY_ZERO_POINT);
+                    nvs_commit(nvs_handle);
+                    nvs_close(nvs_handle);
+                    ESP_LOGI(TAG, "零点标定值已清除");
+                }
+
+                return true;
+            }
+
+            bool M0404::getZeroPoint(std::array<uint16_t, PRESSURE_COUNT>& zero_points) const
+            {
+                zero_points = zero_points_;
+                return zero_point_calibrated_;
+            }
+
+            void M0404::applyZeroPointCompensation(PressureData& data) const
+            {
+                if (!zero_point_calibrated_)
+                {
+                    return; // 未标定，不应用补偿
+                }
+
+                for (size_t i = 0; i < PRESSURE_COUNT; i++)
+                {
+                    // 计算相对压力值（原始值 - 零点值）
+                    // 使用有符号运算，避免下溢
+                    int32_t compensated = (int32_t)data.pressures[i] - (int32_t)zero_points_[i];
+                    // 如果补偿后为负值，设为0
+                    data.pressures[i] = (compensated > 0) ? (uint16_t)compensated : 0;
+                }
+            }
+
+            bool M0404::loadZeroPointFromNVS()
+            {
+                nvs_handle_t nvs_handle;
+                esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+                if (ret != ESP_OK)
+                {
+                    return false;
+                }
+
+                size_t required_size = sizeof(zero_points_);
+                ret = nvs_get_blob(nvs_handle, NVS_KEY_ZERO_POINT, zero_points_.data(), &required_size);
+                nvs_close(nvs_handle);
+
+                if (ret == ESP_OK && required_size == sizeof(zero_points_))
+                {
+                    zero_point_calibrated_ = true;
+                    return true;
+                }
+
+                return false;
+            }
+
+            bool M0404::saveZeroPointToNVS() const
+            {
+                nvs_handle_t nvs_handle;
+                esp_err_t ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+                if (ret != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "打开NVS失败: %s", esp_err_to_name(ret));
+                    return false;
+                }
+
+                ret = nvs_set_blob(nvs_handle, NVS_KEY_ZERO_POINT, zero_points_.data(), sizeof(zero_points_));
+                if (ret == ESP_OK)
+                {
+                    ret = nvs_commit(nvs_handle);
+                }
+                nvs_close(nvs_handle);
+
+                if (ret != ESP_OK)
+                {
+                    ESP_LOGE(TAG, "保存零点值到NVS失败: %s", esp_err_to_name(ret));
+                    return false;
+                }
+
+                return true;
+            }
+
+            void M0404::detectTouchState(const PressureData& data)
+            {
+                if (touch_state_callback_ == nullptr)
+                {
+                    return; // 没有设置回调，不检测
+                }
+
+                uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                
+                // 限制检测频率
+                if (current_time - last_touch_detect_time_ < TOUCH_DETECT_INTERVAL_MS)
+                {
+                    return;
+                }
+                last_touch_detect_time_ = current_time;
+
+                // 计算每行的最大压力值
+                // 行0: 传感器[12, 13, 14, 15] (最上面)
+                // 行1: 传感器[8, 9, 10, 11]
+                // 行2: 传感器[4, 5, 6, 7]
+                // 行3: 传感器[0, 1, 2, 3] (最下面)
+                std::array<uint16_t, 4> row_max_pressures;
+                row_max_pressures.fill(0);
+                
+                // 行0: 传感器[12, 13, 14, 15]
+                for (size_t i = 12; i < 16; i++)
+                {
+                    if (data.pressures[i] > row_max_pressures[0])
+                    {
+                        row_max_pressures[0] = data.pressures[i];
+                    }
+                }
+                
+                // 行1: 传感器[8, 9, 10, 11]
+                for (size_t i = 8; i < 12; i++)
+                {
+                    if (data.pressures[i] > row_max_pressures[1])
+                    {
+                        row_max_pressures[1] = data.pressures[i];
+                    }
+                }
+                
+                // 行2: 传感器[4, 5, 6, 7]
+                for (size_t i = 4; i < 8; i++)
+                {
+                    if (data.pressures[i] > row_max_pressures[2])
+                    {
+                        row_max_pressures[2] = data.pressures[i];
+                    }
+                }
+                
+                // 行3: 传感器[0, 1, 2, 3]
+                for (size_t i = 0; i < 4; i++)
+                {
+                    if (data.pressures[i] > row_max_pressures[3])
+                    {
+                        row_max_pressures[3] = data.pressures[i];
+                    }
+                }
+
+                // 找出所有行的最大压力值
+                uint16_t max_pressure = 0;
+                for (size_t i = 0; i < 4; i++)
+                {
+                    if (row_max_pressures[i] > max_pressure)
+                    {
+                        max_pressure = row_max_pressures[i];
+                    }
+                }
+
+                // 如果没有有效压力，返回
+                if (max_pressure <= DEAD_ZONE_THRESHOLD)
+                {
+                    return;
+                }
+
+                // 判断触摸强度
+                TouchIntensity intensity = (max_pressure >= HEAVY_TOUCH_THRESHOLD) ? 
+                                           TouchIntensity::HEAVY : TouchIntensity::LIGHT;
+
+                // 检测触摸方向
+                // 找出激活的行（压力值超过阈值），找出当前激活的行号
+                std::array<bool, 4> row_active;
+                int new_activated_row = -1;
+                for (size_t i = 0; i < 4; i++)
+                {
+                    row_active[i] = (row_max_pressures[i] > DEAD_ZONE_THRESHOLD);
+                    if (row_active[i])
+                    {
+                        new_activated_row = i; // 记录当前激活的行号
+                    }
+                }
+
+                TouchDirection direction = TouchDirection::NONE;
+                
+                // 如果当前有激活的行，且与上次不同，则判断方向
+                if (new_activated_row != -1)
+                {
+                    // 更新当前激活的行
+                    if (current_activated_row_ != new_activated_row)
+                    {
+                        // 行发生了变化
+                        last_activated_row_ = current_activated_row_;
+                        current_activated_row_ = new_activated_row;
+                        
+                        // 如果已经有两次不同的行激活，立即判断方向
+                        if (last_activated_row_ != -1 && last_activated_row_ != current_activated_row_)
+                        {
+                            // 两次不同的行，判断方向
+                            if (last_activated_row_ < current_activated_row_)
+                            {
+                                // 从上往下（行0->行1->行2->行3）
+                                direction = TouchDirection::TOP_TO_BOTTOM;
+                            }
+                            else
+                            {
+                                // 从下往上（行3->行2->行1->行0）
+                                direction = TouchDirection::BOTTOM_TO_TOP;
+                            }
+                        }
+                        // 如果last_activated_row_ == -1，说明是第一次激活，不判断方向
+                        // 如果last_activated_row_ == current_activated_row_，说明是同一行，direction保持NONE
+                    }
+                }
+                else
+                {
+                    // 当前没有激活的行，清除当前激活的行号
+                    // 但保留last_activated_row_，以便下次判断
+                    current_activated_row_ = -1;
+                }
+
+                // 更新历史记录
+                row_active_history_ = row_active;
+                last_row_pressures_ = row_max_pressures;
+
+                // 调用回调函数
+                if (touch_state_callback_ != nullptr)
+                {
+                    touch_state_callback_(intensity, direction, max_pressure);
+                }
+            }
+
+        } // namespace pressure
+    }     // namespace device
 } // namespace app

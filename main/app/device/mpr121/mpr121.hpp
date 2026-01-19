@@ -17,7 +17,7 @@ namespace app
             constexpr uint8_t MPR121_I2C_ADDR = 0x5A;
 
             // MPR121 电极数量
-            constexpr uint8_t MPR121_ELECTRODE_COUNT = 12;
+            constexpr uint8_t MPR121_ELECTRODE_COUNT = 3;
 
             /**
              * @brief MPR121 触摸传感器数据结构

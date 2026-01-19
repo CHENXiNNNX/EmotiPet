@@ -31,6 +31,38 @@ const MAX_MEDIA_FILES = 100; // 每个类型最多保存的文件数
 
 // 当前连接的客户端
 let currentClient = null;
+let activeAudioRecording = null; // 追踪当前正在追加的音频文件信息
+
+// --- Ogg Opus 封装辅助函数 ---
+const OGG_CRC_TABLE = new Uint32Array(256);
+for (let i = 0; i < 256; i++) {
+    let r = i << 24;
+    for (let j = 0; j < 8; j++) r = (r & 0x80000000) ? (r << 1) ^ 0x04c11db7 : (r << 1);
+    OGG_CRC_TABLE[i] = r;
+}
+function oggCrc(buf) {
+    let crc = 0;
+    for (let i = 0; i < buf.length; i++) crc = (crc << 8) ^ OGG_CRC_TABLE[((crc >>> 24) ^ buf[i]) & 0xff];
+    return crc >>> 0;
+}
+
+function createOggPage(serial, seq, granule, packets, isHeader = 0) {
+    const segmentTable = Buffer.from(packets.map(p => p.length));
+    const header = Buffer.alloc(27);
+    header.write('OggS', 0);
+    header.writeUInt8(0, 4); // version
+    header.writeUInt8(isHeader, 5); // header type
+    header.writeBigUInt64LE(BigInt(granule), 6);
+    header.writeUInt32LE(serial, 14);
+    header.writeUInt32LE(seq, 18);
+    header.writeUInt32LE(0, 22); // checksum placeholder
+    header.writeUInt8(packets.length, 26);
+    
+    const page = Buffer.concat([header, segmentTable, ...packets]);
+    page.writeUInt32LE(oggCrc(page), 22);
+    return page;
+}
+// ----------------------------
 
 // 初始化媒体存储目录
 function initMediaDirectories() {
@@ -88,11 +120,39 @@ function saveSentMessage(message) {
 // 保存音频文件
 function saveAudioFile(data, filename = null) {
     try {
+        // 确保目录存在
+        if (!fs.existsSync(AUDIO_DIR)) {
+            fs.mkdirSync(AUDIO_DIR, { recursive: true });
+        }
+
         const timestamp = Date.now();
         const audioFilename = filename || `audio_${timestamp}.opus`;
         const filepath = path.join(AUDIO_DIR, audioFilename);
 
-        fs.writeFileSync(filepath, data);
+        // 生成随机序列号用于 Ogg 流
+        const serial = Math.floor(Math.random() * 0x7FFFFFFF);
+        
+        // 1. 创建 OpusHead 页 (ID Header)
+        const opusHead = Buffer.alloc(19);
+        opusHead.write('OpusHead', 0);
+        opusHead.writeUInt8(1, 8); // version
+        opusHead.writeUInt8(1, 9); // channels
+        opusHead.writeUInt16LE(0, 10); // pre-skip
+        opusHead.writeUInt32LE(16000, 12); // original sample rate
+        opusHead.writeUInt16LE(0, 16); // gain
+        opusHead.writeUInt8(0, 18); // mapping family
+        const page1 = createOggPage(serial, 0, 0, [opusHead], 0x02);
+
+        // 2. 创建 OpusTags 页 (Comment Header)
+        const opusTags = Buffer.alloc(16);
+        opusTags.write('OpusTags', 0);
+        opusTags.writeUInt32LE(0, 8); // vendor length
+        opusTags.writeUInt32LE(0, 12); // user comment list length
+        const page2 = createOggPage(serial, 1, 0, [opusTags]);
+
+        // 3. 写入文件头和第一个数据包 (假设首包是 20ms = 320 样本)
+        const page3 = createOggPage(serial, 2, 320, [data]);
+        fs.writeFileSync(filepath, Buffer.concat([page1, page2, page3]));
 
         const fileInfo = {
             filename: audioFilename,
@@ -100,7 +160,10 @@ function saveAudioFile(data, filename = null) {
             size: data.length,
             timestamp: getTimestamp(),
             type: 'audio',
-            format: 'opus'
+            format: 'opus',
+            serial: serial,   // 记录序列号供后续追加
+            seq: 3,           // 记录页序号
+            granule: 320      // 记录总样本数
         };
 
         audioFiles.push(fileInfo);
@@ -127,6 +190,11 @@ function saveAudioFile(data, filename = null) {
 // 保存图片文件
 function saveImageFile(data, filename = null) {
     try {
+        // 确保目录存在
+        if (!fs.existsSync(IMAGES_DIR)) {
+            fs.mkdirSync(IMAGES_DIR, { recursive: true });
+        }
+
         const timestamp = Date.now();
         const imageFilename = filename || `image_${timestamp}.jpg`;
         const filepath = path.join(IMAGES_DIR, imageFilename);
@@ -321,8 +389,27 @@ function handleMessage(ws, data, isBinary = false) {
         }
 
         // 其他二进制数据当作音频处理（OPUS格式）
-        console.log(`🎵 收到音频数据 (${data.length} 字节)`);
-        saveAudioFile(data);
+        if (activeAudioRecording) {
+            // 如果已有活跃录制，则将数据封装为 Ogg 页并追加到文件末尾
+            try {
+                activeAudioRecording.granule += 320; // 增加 20ms 的采样数 (16kHz * 0.02s)
+                const page = createOggPage(
+                    activeAudioRecording.serial, 
+                    activeAudioRecording.seq++, 
+                    activeAudioRecording.granule, 
+                    [data]
+                );
+                fs.appendFileSync(activeAudioRecording.filepath, page);
+                activeAudioRecording.size += page.length;
+                console.log(`🎵 封装 Ogg 页并追加: ${data.length} -> ${page.length} 字节 (总计: ${activeAudioRecording.size} 字节)`);
+            } catch (err) {
+                console.error('❌ 追加音频数据失败:', err);
+            }
+        } else {
+            // 如果没有活跃录制，创建一个新文件作为起始包
+            console.log(`🎵 收到新音轨首包 (${data.length} 字节)`);
+            activeAudioRecording = saveAudioFile(data);
+        }
         return;
     }
 
@@ -336,6 +423,12 @@ function handleMessage(ws, data, isBinary = false) {
     }
 
     const message = result.message;
+
+    // 收到 listen 消息时，结束当前录制，准备下次二进制包创建新文件
+    if (message.type === 'listen') {
+        console.log('🎤 收到 listen 指令：准备开始新一轮音频采集');
+        activeAudioRecording = null;
+    }
 
     // 直接打印原始JSON字符串
     console.log('\n📥 接收 JSON:');
@@ -1093,6 +1186,66 @@ function generateHTML() {
             background: #0056b3;
         }
 
+        /* 压力传感器阵列样式 */
+        .pressure-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .pressure-section h3 {
+            margin-bottom: 15px;
+            color: #495057;
+            text-align: center;
+        }
+
+        .pressure-grid-container {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            gap: 10px;
+            max-width: 500px;
+            margin: 0 auto;
+            aspect-ratio: 1 / 1;
+            padding: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+        }
+
+        .pressure-grid-item {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #ffffff;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .pressure-grid-item .value {
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .pressure-grid-item .index {
+            font-size: 11px;
+            color: #666;
+        }
+
+        .pressure-info {
+            text-align: center;
+            margin-top: 15px;
+            color: #6c757d;
+            font-size: 14px;
+        }
+
         @media (max-width: 768px) {
             .messages-container {
                 grid-template-columns: 1fr;
@@ -1150,6 +1303,16 @@ function generateHTML() {
         </div>
 
         <div id="messages" class="tab-content active">
+            <div class="pressure-section">
+                <h3>📊 压力传感器阵列（16宫格）</h3>
+                <div class="pressure-grid-container" id="pressureGrid">
+                    <!-- 动态生成16个压力传感器点位 -->
+                </div>
+                <div class="pressure-info">
+                    <p>压力值单位：Pa，颜色从白色（无压力）到黑色（最大压力）渐变</p>
+                    <p id="pressureInfo">等待数据...</p>
+                </div>
+            </div>
             <div class="messages-container">
                 <div class="message-section">
                     <h3>📥 收到的消息</h3>
@@ -1254,6 +1417,88 @@ function generateHTML() {
 
     <script>
         let refreshInterval;
+        let lastPressureData = null;
+
+        // 初始化压力传感器16宫格
+        function initPressureGrid() {
+            const gridContainer = document.getElementById('pressureGrid');
+            if (!gridContainer) return;
+            
+            gridContainer.innerHTML = '';
+            for (let i = 0; i < 16; i++) {
+                const gridItem = document.createElement('div');
+                gridItem.className = 'pressure-grid-item';
+                gridItem.id = 'pressure-grid-' + i;
+                gridItem.innerHTML = '<div class="value">0</div><div class="index">点位' + i + '</div>';
+                gridContainer.appendChild(gridItem);
+            }
+        }
+
+        // 根据压力值获取颜色（从白色到黑色的渐变）
+        function getColorByPressure(value) {
+            // 计算压力值归一化（0-1），假设最大压力为1000Pa
+            const normalizedValue = Math.min(value / 1000, 1);
+            
+            // 根据压力值调整黑色参数：0=白色（无压力），1=黑色（最大压力）
+            const blackLevel = Math.floor(normalizedValue * 255);
+            
+            // 计算最终颜色（从白色到黑色的渐变）
+            const r = 255 - blackLevel;
+            const g = 255 - blackLevel;
+            const b = 255 - blackLevel;
+            
+            return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+        }
+
+        // 更新压力传感器阵列显示
+        function updatePressureGrid(pressureData, messageData) {
+            if (!Array.isArray(pressureData) || pressureData.length !== 16) {
+                return;
+            }
+
+            lastPressureData = {
+                pressure: pressureData,
+                timestamp: messageData && messageData.timestamp ? messageData.timestamp : new Date().toISOString(),
+                from: messageData && messageData.from ? messageData.from : 'unknown'
+            };
+
+            // 更新16宫格
+            for (let i = 0; i < 16; i++) {
+                const value = pressureData[i] || 0;
+                const gridItem = document.getElementById('pressure-grid-' + i);
+                if (gridItem) {
+                    // 更新数值
+                    const valueElement = gridItem.querySelector('.value');
+                    if (valueElement) {
+                        valueElement.textContent = Math.round(value);
+                    }
+                    
+                    // 更新背景颜色
+                    const color = getColorByPressure(value);
+                    gridItem.style.backgroundColor = color;
+                    
+                    // 更新文字颜色（根据背景色调整，确保可读性）
+                    const rgbMatch = color.match(/\\d+/g);
+                    if (rgbMatch && rgbMatch.length === 3) {
+                        const r = parseInt(rgbMatch[0]);
+                        const g = parseInt(rgbMatch[1]);
+                        const b = parseInt(rgbMatch[2]);
+                        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                        gridItem.style.color = brightness > 128 ? '#333' : '#fff';
+                    }
+                }
+            }
+
+            // 更新信息显示
+            const pressureInfo = document.getElementById('pressureInfo');
+            if (pressureInfo) {
+                const activePoints = pressureData.filter(function(v) { return v > 0; }).length;
+                const maxPressure = Math.max.apply(null, pressureData);
+                const timestamp = messageData && messageData.timestamp ? new Date(messageData.timestamp).toLocaleString('zh-CN') : '未知';
+                const deviceFrom = messageData && messageData.from ? messageData.from : '未知';
+                pressureInfo.innerHTML = '设备: ' + deviceFrom + ' | 活跃点位: ' + activePoints + '/16 | 最大压力: ' + Math.round(maxPressure) + ' Pa | 更新时间: ' + timestamp;
+            }
+        }
 
         function switchTab(tabName) {
             // 隐藏所有标签页
@@ -1270,6 +1515,11 @@ function generateHTML() {
 
             // 加载对应数据
             if (tabName === 'messages') {
+                initPressureGrid();
+                // 如果有上次的压力数据，恢复显示
+                if (lastPressureData) {
+                    updatePressureGrid(lastPressureData.pressure, lastPressureData);
+                }
                 loadMessages();
                 startAutoRefresh();
             } else if (tabName === 'media') {
@@ -1319,6 +1569,23 @@ function generateHTML() {
             if (messages.length === 0) {
                 container.innerHTML = '<div class="empty-state"><i>📭</i><div>暂无消息</div></div>';
                 return;
+            }
+
+            // 查找最新的transport_info消息（仅处理收到的消息）
+            if (!isSent && containerId === 'receivedMessages') {
+                const transportMessages = messages.filter(item => {
+                    const msg = item.message || item;
+                    return msg.type === 'transport_info' && msg.data && Array.isArray(msg.data.pressure);
+                });
+                
+                if (transportMessages.length > 0) {
+                    // 获取最新的transport_info消息
+                    const latestMessage = transportMessages[transportMessages.length - 1];
+                    const message = latestMessage.message || latestMessage;
+                    if (message.data && Array.isArray(message.data.pressure)) {
+                        updatePressureGrid(message.data.pressure, message);
+                    }
+                }
             }
 
             container.innerHTML = messages.slice(-50).reverse().map(item => {
@@ -1688,6 +1955,7 @@ function generateHTML() {
         document.head.appendChild(style);
 
         // 初始化
+        initPressureGrid();
         loadMessages();
         loadStats();
         startAutoRefresh();
