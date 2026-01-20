@@ -32,6 +32,10 @@ const MAX_MEDIA_FILES = 100; // 每个类型最多保存的文件数
 // 当前连接的客户端
 let currentClient = null;
 let activeAudioRecording = null; // 追踪当前正在追加的音频文件信息
+let audioPacketCount = 0; // 音频包计数器
+let lastAudioLogTime = 0; // 上次音频日志输出时间
+const AUDIO_LOG_INTERVAL = 1000; // 音频日志输出间隔（毫秒）
+const AUDIO_LOG_PACKET_INTERVAL = 10; // 音频日志输出包间隔
 
 // --- Ogg Opus 封装辅助函数 ---
 const OGG_CRC_TABLE = new Uint32Array(256);
@@ -46,8 +50,72 @@ function oggCrc(buf) {
     return crc >>> 0;
 }
 
+// 根据 Opus 帧数据计算样本数
+// ESP32 端配置：16kHz 采样率，20ms 帧时长（固定）
+// 因此每个 Opus 帧 = 16000 * 0.02 = 320 样本
+// 注意：帧大小可能因 VBR（可变比特率）而变化，但帧时长固定为 20ms
+function getOpusFrameSamples(frameData) {
+    if (!frameData || frameData.length === 0) {
+        return 320; // 默认 20ms @ 16kHz
+    }
+    
+    // 解析 Opus TOC (Table of Contents) 字节
+    // TOC 字节结构：
+    // bit 0-2: 配置编号 (0-7)
+    // bit 3: 立体声标志
+    // bit 4-7: 编码模式
+    
+    // 对于单声道 16kHz Opus，帧时长通常是固定的
+    // 但我们可以通过检查帧大小来验证
+    
+    // ESP32 配置：20ms 帧 @ 16kHz = 320 样本
+    // 单个 20ms Opus 帧大小通常在 20-80 字节之间（取决于比特率）
+    
+    const frameSize = frameData.length;
+    
+    // 如果帧大小异常小（< 10 字节），可能不是有效的 Opus 帧
+    if (frameSize < 10) {
+        console.warn(`⚠️ 警告: Opus 帧大小异常小 (${frameSize} 字节)，使用默认值`);
+        return 320;
+    }
+    
+    // 如果帧大小 > 200 字节，可能包含多个帧
+    // 但根据 ESP32 配置，应该是单个 20ms 帧
+    if (frameSize > 200) {
+        console.warn(`⚠️ 警告: Opus 帧大小异常大 (${frameSize} 字节)，可能包含多个帧`);
+        // 估算帧数：每 40-50 字节一个帧
+        const estimatedFrames = Math.max(1, Math.floor(frameSize / 45));
+        return 320 * estimatedFrames;
+    }
+    
+    // 正常情况：单个 20ms 帧
+    return 320;
+}
+
 function createOggPage(serial, seq, granule, packets, isHeader = 0) {
-    const segmentTable = Buffer.from(packets.map(p => p.length));
+    // 构建段表和分割数据包
+    // Ogg 格式要求：每个段最多 255 字节，如果包 > 255 字节需要分割
+    const segments = [];
+    const pageData = [];
+    
+    for (const packet of packets) {
+        if (packet.length <= 255) {
+            // 包 <= 255 字节，直接作为一个段
+            segments.push(packet.length);
+            pageData.push(packet);
+        } else {
+            // 包 > 255 字节，需要分割成多个段
+            let offset = 0;
+            while (offset < packet.length) {
+                const segmentSize = Math.min(packet.length - offset, 255);
+                segments.push(segmentSize);
+                pageData.push(packet.slice(offset, offset + segmentSize));
+                offset += segmentSize;
+            }
+        }
+    }
+    
+    const segmentTable = Buffer.from(segments);
     const header = Buffer.alloc(27);
     header.write('OggS', 0);
     header.writeUInt8(0, 4); // version
@@ -56,9 +124,9 @@ function createOggPage(serial, seq, granule, packets, isHeader = 0) {
     header.writeUInt32LE(serial, 14);
     header.writeUInt32LE(seq, 18);
     header.writeUInt32LE(0, 22); // checksum placeholder
-    header.writeUInt8(packets.length, 26);
+    header.writeUInt8(segments.length, 26);
     
-    const page = Buffer.concat([header, segmentTable, ...packets]);
+    const page = Buffer.concat([header, segmentTable, ...pageData]);
     page.writeUInt32LE(oggCrc(page), 22);
     return page;
 }
@@ -136,8 +204,8 @@ function saveAudioFile(data, filename = null) {
         const opusHead = Buffer.alloc(19);
         opusHead.write('OpusHead', 0);
         opusHead.writeUInt8(1, 8); // version
-        opusHead.writeUInt8(1, 9); // channels
-        opusHead.writeUInt16LE(0, 10); // pre-skip
+        opusHead.writeUInt8(1, 9); // channels (单声道)
+        opusHead.writeUInt16LE(80, 10); // pre-skip: 80 样本 = 5ms @ 16kHz (Opus 编码器延迟)
         opusHead.writeUInt32LE(16000, 12); // original sample rate
         opusHead.writeUInt16LE(0, 16); // gain
         opusHead.writeUInt8(0, 18); // mapping family
@@ -150,8 +218,9 @@ function saveAudioFile(data, filename = null) {
         opusTags.writeUInt32LE(0, 12); // user comment list length
         const page2 = createOggPage(serial, 1, 0, [opusTags]);
 
-        // 3. 写入文件头和第一个数据包 (假设首包是 20ms = 320 样本)
-        const page3 = createOggPage(serial, 2, 320, [data]);
+        // 3. 写入文件头和第一个数据包
+        const firstFrameSamples = getOpusFrameSamples(data);
+        const page3 = createOggPage(serial, 2, firstFrameSamples, [data]);
         fs.writeFileSync(filepath, Buffer.concat([page1, page2, page3]));
 
         const fileInfo = {
@@ -163,7 +232,7 @@ function saveAudioFile(data, filename = null) {
             format: 'opus',
             serial: serial,   // 记录序列号供后续追加
             seq: 3,           // 记录页序号
-            granule: 320      // 记录总样本数
+            granule: firstFrameSamples  // 记录总样本数
         };
 
         audioFiles.push(fileInfo);
@@ -392,7 +461,10 @@ function handleMessage(ws, data, isBinary = false) {
         if (activeAudioRecording) {
             // 如果已有活跃录制，则将数据封装为 Ogg 页并追加到文件末尾
             try {
-                activeAudioRecording.granule += 320; // 增加 20ms 的采样数 (16kHz * 0.02s)
+                // 根据 Opus 帧大小计算实际的样本数
+                const frameSamples = getOpusFrameSamples(data);
+                activeAudioRecording.granule += frameSamples;
+                
                 const page = createOggPage(
                     activeAudioRecording.serial, 
                     activeAudioRecording.seq++, 
@@ -401,7 +473,21 @@ function handleMessage(ws, data, isBinary = false) {
                 );
                 fs.appendFileSync(activeAudioRecording.filepath, page);
                 activeAudioRecording.size += page.length;
-                console.log(`🎵 封装 Ogg 页并追加: ${data.length} -> ${page.length} 字节 (总计: ${activeAudioRecording.size} 字节)`);
+                audioPacketCount++;
+                
+                // 定期输出日志：每N个包或每N秒输出一次
+                const now = Date.now();
+                const shouldLog = (audioPacketCount % AUDIO_LOG_PACKET_INTERVAL === 0) || 
+                                 (now - lastAudioLogTime >= AUDIO_LOG_INTERVAL);
+                
+                if (shouldLog) {
+                    const duration = ((activeAudioRecording.granule / 16000) * 1000).toFixed(0); // 毫秒
+                    const frameSamples = getOpusFrameSamples(data);
+                    const toc = data.length > 0 ? data[0] : 0;
+                    const config = toc & 0x07;
+                    console.log(`🎵 音频录制中: ${audioPacketCount} 包 | ${(activeAudioRecording.size / 1024).toFixed(1)} KB | ${duration}ms | 最新帧: ${data.length}B, TOC=0x${toc.toString(16)}, 配置${config}, ${frameSamples}样本, granule=${activeAudioRecording.granule}`);
+                    lastAudioLogTime = now;
+                }
             } catch (err) {
                 console.error('❌ 追加音频数据失败:', err);
             }
@@ -409,6 +495,8 @@ function handleMessage(ws, data, isBinary = false) {
             // 如果没有活跃录制，创建一个新文件作为起始包
             console.log(`🎵 收到新音轨首包 (${data.length} 字节)`);
             activeAudioRecording = saveAudioFile(data);
+            audioPacketCount = 0;
+            lastAudioLogTime = Date.now();
         }
         return;
     }
@@ -428,6 +516,8 @@ function handleMessage(ws, data, isBinary = false) {
     if (message.type === 'listen') {
         console.log('🎤 收到 listen 指令：准备开始新一轮音频采集');
         activeAudioRecording = null;
+        audioPacketCount = 0;
+        lastAudioLogTime = 0;
     }
 
     // 直接打印原始JSON字符串

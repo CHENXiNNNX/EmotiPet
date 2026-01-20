@@ -22,17 +22,18 @@ namespace app
                 ELE1_T         = 0x43, // 电极1触摸阈值 (MPR121_E1TTH)
                 ELE1_R         = 0x44, // 电极1释放阈值 (MPR121_E1RTH)
                 // ... 其他电极配置寄存器
-                AFE2           = 0x5D, // AFE配置寄存器2 (MPR121_AFE2)
-                ELE_CFG        = 0x5E, // 电极配置寄存器 (MPR121_ECR)
-                SRST           = 0x80, // 软复位寄存器 (MPR121_SRST)
+                AFE2    = 0x5D, // AFE配置寄存器2 (MPR121_AFE2)
+                ELE_CFG = 0x5E, // 电极配置寄存器 (MPR121_ECR)
+                SRST    = 0x80, // 软复位寄存器 (MPR121_SRST)
             };
 
             // 默认配置值（参考原始组件的默认值）
-            constexpr uint8_t DEFAULT_TOUCH_THRESHOLD   = 40;  // 触摸阈值（原始组件默认值）
-            constexpr uint8_t DEFAULT_RELEASE_THRESHOLD = 20;  // 释放阈值（原始组件默认值）
-            constexpr uint8_t DEFAULT_ELECTRODE_CONFIG  = 0x03; // 电极配置（启用3个电极，根据实际需求调整）
-            constexpr uint8_t SOFT_RESET_VALUE          = 0x63; // 软复位值
-            constexpr uint8_t AFE2_DEFAULT_VALUE        = 0x24; // AFE2默认值（用于验证初始化）
+            constexpr uint8_t DEFAULT_TOUCH_THRESHOLD   = 40; // 触摸阈值（原始组件默认值）
+            constexpr uint8_t DEFAULT_RELEASE_THRESHOLD = 20; // 释放阈值（原始组件默认值）
+            constexpr uint8_t DEFAULT_ELECTRODE_CONFIG =
+                0x03; // 电极配置（启用3个电极，根据实际需求调整）
+            constexpr uint8_t SOFT_RESET_VALUE   = 0x63; // 软复位值
+            constexpr uint8_t AFE2_DEFAULT_VALUE = 0x24; // AFE2默认值（用于验证初始化）
 
             MPR121::~MPR121()
             {
@@ -94,7 +95,8 @@ namespace app
 
                 if (afe2_value != AFE2_DEFAULT_VALUE)
                 {
-                    ESP_LOGW(TAG, "AFE2 寄存器值异常: 0x%02X (期望: 0x%02X)", afe2_value, AFE2_DEFAULT_VALUE);
+                    ESP_LOGW(TAG, "AFE2 寄存器值异常: 0x%02X (期望: 0x%02X)", afe2_value,
+                             AFE2_DEFAULT_VALUE);
                     // 不直接返回失败，继续初始化流程
                 }
 

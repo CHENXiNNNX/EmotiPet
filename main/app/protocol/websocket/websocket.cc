@@ -72,7 +72,7 @@ namespace app
                     ws_cfg.disable_auto_reconnect      = config.disable_auto_reconnect;
                     ws_cfg.disable_pingpong_discon     = config.disable_pingpong_discon;
                     ws_cfg.skip_cert_common_name_check = config.skip_cert_common_name_check;
-                    ws_cfg.use_global_ca_store        = config.use_global_ca_store;
+                    ws_cfg.use_global_ca_store         = config.use_global_ca_store;
 
                     // 配置 WSS/TLS 验证选项
                     if (!config.uri.empty() && (config.uri.find("wss://") == 0))
@@ -88,7 +88,7 @@ namespace app
                         {
                             // 跳过验证模式：挂载 bundle 但跳过名称检查
                             // 这样可以绕过 "No server verification option set" 检查
-                            ws_cfg.crt_bundle_attach          = esp_crt_bundle_attach;
+                            ws_cfg.crt_bundle_attach           = esp_crt_bundle_attach;
                             ws_cfg.skip_cert_common_name_check = true;
                             ESP_LOGW(TAG, "WSS 连接：跳过证书验证（仅用于测试）");
                         }
@@ -295,8 +295,8 @@ namespace app
 
             bool WebSocketClient::disconnect()
             {
-                StateCallback state_cb;
-                bool          should_stop = false;
+                StateCallback                 state_cb;
+                bool                          should_stop    = false;
                 esp_websocket_client_handle_t handle_to_stop = nullptr;
 
                 {
@@ -312,9 +312,9 @@ namespace app
                         return false;
                     }
 
-                    should_stop     = true;
-                    handle_to_stop  = client_handle_;
-                    state_cb        = state_callback_;
+                    should_stop    = true;
+                    handle_to_stop = client_handle_;
+                    state_cb       = state_callback_;
                 }
 
                 // 在锁外调用 esp_websocket_client_stop（避免死锁）
@@ -417,8 +417,9 @@ namespace app
 
                 // 在锁外发送数据（避免长时间持锁，特别是大数据包）
                 TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
-                int        sent          = esp_websocket_client_send_bin(
-                    handle, reinterpret_cast<const char*>(data), static_cast<int>(len), timeout_ticks);
+                int        sent =
+                    esp_websocket_client_send_bin(handle, reinterpret_cast<const char*>(data),
+                                                  static_cast<int>(len), timeout_ticks);
 
                 if (sent < 0)
                 {

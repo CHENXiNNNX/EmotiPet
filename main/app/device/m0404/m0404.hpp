@@ -16,21 +16,21 @@ namespace app
         namespace m0404
         {
             // 压力传感器数据包格式
-            constexpr uint8_t PACKET_HEADER_1 = 0xAA;
-            constexpr uint8_t PACKET_HEADER_2 = 0x01;
-            constexpr uint8_t PRESSURE_COUNT  = 16;  // 16个压力值
-            constexpr uint8_t PACKET_SIZE     = 35;  // 总包大小：2(头) + 32(数据) + 1(校验)
-            constexpr uint16_t DEAD_ZONE_THRESHOLD = 30 ;  // 死区阈值，小于此值的压力变化将被忽略
-            constexpr uint16_t HEAVY_TOUCH_THRESHOLD = 500;  // 重摸阈值，大于此值认为是重摸
+            constexpr uint8_t  PACKET_HEADER_1       = 0xAA;
+            constexpr uint8_t  PACKET_HEADER_2       = 0x01;
+            constexpr uint8_t  PRESSURE_COUNT        = 16;  // 16个压力值
+            constexpr uint8_t  PACKET_SIZE           = 35;  // 总包大小：2(头) + 32(数据) + 1(校验)
+            constexpr uint16_t DEAD_ZONE_THRESHOLD   = 30;  // 死区阈值，小于此值的压力变化将被忽略
+            constexpr uint16_t HEAVY_TOUCH_THRESHOLD = 500; // 重摸阈值，大于此值认为是重摸
 
             /**
              * @brief 触摸强度类型
              */
             enum class TouchIntensity
             {
-                NONE = 0,    // 无触摸
-                LIGHT = 1,   // 轻摸（< 500）
-                HEAVY = 2    // 重摸（>= 500）
+                NONE  = 0, // 无触摸
+                LIGHT = 1, // 轻摸（< 500）
+                HEAVY = 2  // 重摸（>= 500）
             };
 
             /**
@@ -38,9 +38,9 @@ namespace app
              */
             enum class TouchDirection
             {
-                NONE = 0,        // 无方向
-                TOP_TO_BOTTOM = 1,  // 从上往下（12->8->4->0）
-                BOTTOM_TO_TOP = 2   // 从下往上（0->4->8->12）
+                NONE          = 0, // 无方向
+                TOP_TO_BOTTOM = 1, // 从上往下（12->8->4->0）
+                BOTTOM_TO_TOP = 2  // 从下往上（0->4->8->12）
             };
 
             /**
@@ -167,7 +167,8 @@ namespace app
                  * @param direction 触摸方向（从上往下/从下往上）
                  * @param max_pressure 最大压力值
                  */
-                using TouchStateCallback = std::function<void(TouchIntensity intensity, TouchDirection direction, uint16_t max_pressure)>;
+                using TouchStateCallback = std::function<void(
+                    TouchIntensity intensity, TouchDirection direction, uint16_t max_pressure)>;
 
                 /**
                  * @brief 设置压力状态回调函数
@@ -213,38 +214,39 @@ namespace app
                 void enableDefaultTouchStateLogging()
                 {
                     setTouchStateCallback(
-                        [](TouchIntensity intensity, TouchDirection direction, uint16_t max_pressure)
+                        [](TouchIntensity intensity, TouchDirection direction,
+                           uint16_t max_pressure)
                         {
                             const char* intensity_str = "";
                             switch (intensity)
                             {
-                                case TouchIntensity::LIGHT:
-                                    intensity_str = "轻摸";
-                                    break;
-                                case TouchIntensity::HEAVY:
-                                    intensity_str = "重摸";
-                                    break;
-                                default:
-                                    intensity_str = "无";
-                                    break;
+                            case TouchIntensity::LIGHT:
+                                intensity_str = "轻摸";
+                                break;
+                            case TouchIntensity::HEAVY:
+                                intensity_str = "重摸";
+                                break;
+                            default:
+                                intensity_str = "无";
+                                break;
                             }
 
                             const char* direction_str = "";
                             switch (direction)
                             {
-                                case TouchDirection::TOP_TO_BOTTOM:
-                                    direction_str = "从上往下";
-                                    break;
-                                case TouchDirection::BOTTOM_TO_TOP:
-                                    direction_str = "从下往上";
-                                    break;
-                                default:
-                                    direction_str = "无方向";
-                                    break;
+                            case TouchDirection::TOP_TO_BOTTOM:
+                                direction_str = "从上往下";
+                                break;
+                            case TouchDirection::BOTTOM_TO_TOP:
+                                direction_str = "从下往上";
+                                break;
+                            default:
+                                direction_str = "无方向";
+                                break;
                             }
 
-                            ESP_LOGI("M0404", "触摸状态: %s, 方向: %s, 最大压力: %u", 
-                                     intensity_str, direction_str, max_pressure);
+                            ESP_LOGI("M0404", "触摸状态: %s, 方向: %s, 最大压力: %u", intensity_str,
+                                     direction_str, max_pressure);
                         });
                 }
 
@@ -305,7 +307,8 @@ namespace app
                  * @param sample_interval_ms 每次采集间隔（毫秒），默认100ms
                  * @return true 成功, false 失败
                  */
-                bool calibrateZeroPoint(uint32_t sample_count = 50, uint32_t sample_interval_ms = 100);
+                bool calibrateZeroPoint(uint32_t sample_count       = 50,
+                                        uint32_t sample_interval_ms = 100);
 
                 /**
                  * @brief 静态方法：执行零点标定（便捷接口）
@@ -313,7 +316,8 @@ namespace app
                  * @param sample_interval_ms 每次采集间隔（毫秒），默认100ms
                  * @return true 成功, false 失败
                  */
-                static bool CalibrateZeroPoint(uint32_t sample_count = 50, uint32_t sample_interval_ms = 100)
+                static bool CalibrateZeroPoint(uint32_t sample_count       = 50,
+                                               uint32_t sample_interval_ms = 100)
                 {
                     return getInstance().calibrateZeroPoint(sample_count, sample_interval_ms);
                 }
@@ -375,7 +379,7 @@ namespace app
                 // 保存零点值到NVS
                 bool saveZeroPointToNVS() const;
 
-                uart_port_t uart_num_ = UART_NUM_MAX;
+                uart_port_t uart_num_    = UART_NUM_MAX;
                 bool        initialized_ = false;
                 int         baud_rate_   = 115200;
 
@@ -386,22 +390,24 @@ namespace app
 
                 // 压力状态回调函数
                 PressureStatusCallback pressure_status_callback_ = nullptr;
-                
+
                 // 触摸状态回调函数
                 TouchStateCallback touch_state_callback_ = nullptr;
-                
+
                 // 当前压力状态：0=无压力，1=有压力，-1=未初始化
                 int current_pressure_status_ = -1;
 
                 // 触摸检测相关
-                std::array<uint16_t, 4> last_row_pressures_; // 保存每行的最大压力值 [12行, 8行, 4行, 0行]
-                std::array<bool, 4> row_active_history_;     // 每行的激活历史
-                std::array<uint32_t, 4> row_activate_time_;  // 每行首次激活的时间戳 [12行, 8行, 4行, 0行]，0表示未激活
-                uint32_t last_touch_detect_time_ = 0;       // 上次触摸检测时间
+                std::array<uint16_t, 4>
+                    last_row_pressures_; // 保存每行的最大压力值 [12行, 8行, 4行, 0行]
+                std::array<bool, 4> row_active_history_; // 每行的激活历史
+                std::array<uint32_t, 4>
+                    row_activate_time_; // 每行首次激活的时间戳 [12行, 8行, 4行, 0行]，0表示未激活
+                uint32_t                  last_touch_detect_time_  = 0;   // 上次触摸检测时间
                 static constexpr uint32_t TOUCH_DETECT_INTERVAL_MS = 200; // 触摸检测间隔
-                
+
                 // 最近两次激活的行记录（用于判断方向）
-                int last_activated_row_ = -1;  // 上一次激活的行号，-1表示未激活
+                int last_activated_row_    = -1; // 上一次激活的行号，-1表示未激活
                 int current_activated_row_ = -1; // 当前激活的行号，-1表示未激活
 
                 // 检测触摸状态和方向
@@ -415,7 +421,7 @@ namespace app
 
                 // 零点标定值（16个传感器的基准值）
                 std::array<uint16_t, PRESSURE_COUNT> zero_points_;
-                bool zero_point_calibrated_ = false; // 是否已标定
+                bool                                 zero_point_calibrated_ = false; // 是否已标定
             };
 
         } // namespace m0404

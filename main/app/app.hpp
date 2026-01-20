@@ -124,14 +124,14 @@ namespace app
                        int baud_rate = 115200); // 初始化 M0404 压力传感器
         bool initProvision();                   // 初始化配网管理器
         bool initNTP();                         // 初始化NTP管理器
-        bool initChatbot(const std::string& server_host, int server_port = -1,
+        bool
+             initChatbot(const std::string& server_host, int server_port = -1,
                          int ping_interval_sec = 10, int pingpong_timeout_sec = 10,
-                         int                reconnect_timeout_ms = 10000,
-                         const std::string& path                 = "",
-                         const std::string& protocol             = "ws"); // 初始化Chatbot (protocol: "ws" or "wss")
+                         int reconnect_timeout_ms = 10000, const std::string& path = "",
+                         const std::string& protocol = "ws"); // 初始化Chatbot (protocol: "ws" or "wss")
         bool initAudio(i2c_master_bus_handle_t i2c_handle,
                        int                     sample_rate = 16000);             // 初始化音频
-        bool initOpus();                                     // 初始化 Opus 编码器
+        bool initOpusEnc();                                  // 初始化 Opus 编码器
         bool initAfe();                                      // 初始化AFE（音频前端处理）
         bool initCamera(i2c_master_bus_handle_t i2c_handle); // 初始化摄像头
         bool startAudioCapture();                            // 启动音频采集
@@ -184,15 +184,15 @@ namespace app
         void onProvisionComplete(bool success, const char* ssid);     // 配网完成回调
 
         // ==================== 成员变量 ====================
-        i2c::I2c                                         i2c_;
-        device::qmi8658a::Qmi8658a                       qmi8658a_;
-        media::audio::Audio                              audio_;
-        media::camera::Camera                            camera_;
-        std::unique_ptr<media::audio::process::afe::Afe> afe_;
+        i2c::I2c                                                          i2c_;
+        device::qmi8658a::Qmi8658a                                        qmi8658a_;
+        media::audio::Audio                                               audio_;
+        media::camera::Camera                                             camera_;
+        std::unique_ptr<media::audio::process::afe::Afe>                  afe_;
         std::unique_ptr<media::audio::process::opus::encode::OpusEncoder> opus_encoder_;
-        chatbot::Chatbot                                 chatbot_;
-        chatbot::handle::MessageSender                   message_sender_;
-        chatbot::handle::MessageReceiver                 message_receiver_;
+        chatbot::Chatbot                                                  chatbot_;
+        chatbot::handle::MessageSender                                    message_sender_;
+        chatbot::handle::MessageReceiver                                  message_receiver_;
 
         device::apds9930::APDS9930& apds9930_;
         device::mpr121::MPR121&     mpr121_;

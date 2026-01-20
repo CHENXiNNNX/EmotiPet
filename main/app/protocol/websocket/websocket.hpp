@@ -87,8 +87,9 @@ namespace app
                 const char* cert_pem                    = nullptr; // 服务器证书（WSS时需要）
                 size_t      cert_len                    = 0;       // 证书长度
                 bool        skip_cert_common_name_check = false;   // 跳过证书通用名检查
-                bool        use_global_ca_store        = false;    // 使用全局 CA 存储
-                bool        skip_cert_verification     = true;     // 是否跳过证书验证（默认 true 以保证 wss 兼容性）
+                bool        use_global_ca_store         = false;   // 使用全局 CA 存储
+                bool        skip_cert_verification =
+                    true; // 是否跳过证书验证（默认 true 以保证 wss 兼容性）
             };
 
             /**

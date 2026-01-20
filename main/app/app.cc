@@ -24,6 +24,7 @@ static const char* const TAG = "App";
 namespace app
 {
     // ==================== 公共方法 ====================
+
     bool App::setup()
     {
         if (!initNVS())
@@ -110,6 +111,39 @@ namespace app
 
     // ==================== 状态管理 ====================
 
+    namespace
+    {
+        /**
+         * @brief 获取状态名称字符串
+         * @param state 设备状态
+         * @return 状态名称字符串
+         */
+        const char* getStateName(DeviceState state)
+        {
+            switch (state)
+            {
+            case DeviceState::INIT:
+                return "INIT";
+            case DeviceState::PROVISIONING:
+                return "PROVISIONING";
+            case DeviceState::NTP_SYNC:
+                return "NTP_SYNC";
+            case DeviceState::CONNECTING:
+                return "CONNECTING";
+            case DeviceState::WAKEWORD_WAIT:
+                return "WAKEWORD_WAIT";
+            case DeviceState::RUNNING:
+                return "RUNNING";
+            case DeviceState::ERROR:
+                return "ERROR";
+            case DeviceState::RECOVERY:
+                return "RECOVERY";
+            default:
+                return "UNKNOWN";
+            }
+        }
+    } // namespace
+
     void App::setState(DeviceState new_state)
     {
         if (current_state_ == new_state)
@@ -118,68 +152,7 @@ namespace app
         }
 
         // 记录状态转换
-        const char* old_state_name = "UNKNOWN";
-        const char* new_state_name = "UNKNOWN";
-
-        // 获取旧状态名称
-        switch (current_state_)
-        {
-        case DeviceState::INIT:
-            old_state_name = "INIT";
-            break;
-        case DeviceState::PROVISIONING:
-            old_state_name = "PROVISIONING";
-            break;
-        case DeviceState::NTP_SYNC:
-            old_state_name = "NTP_SYNC";
-            break;
-        case DeviceState::CONNECTING:
-            old_state_name = "CONNECTING";
-            break;
-        case DeviceState::WAKEWORD_WAIT:
-            old_state_name = "WAKEWORD_WAIT";
-            break;
-        case DeviceState::RUNNING:
-            old_state_name = "RUNNING";
-            break;
-        case DeviceState::ERROR:
-            old_state_name = "ERROR";
-            break;
-        case DeviceState::RECOVERY:
-            old_state_name = "RECOVERY";
-            break;
-        }
-
-        // 获取新状态名称
-        switch (new_state)
-        {
-        case DeviceState::INIT:
-            new_state_name = "INIT";
-            break;
-        case DeviceState::PROVISIONING:
-            new_state_name = "PROVISIONING";
-            break;
-        case DeviceState::NTP_SYNC:
-            new_state_name = "NTP_SYNC";
-            break;
-        case DeviceState::CONNECTING:
-            new_state_name = "CONNECTING";
-            break;
-        case DeviceState::WAKEWORD_WAIT:
-            new_state_name = "WAKEWORD_WAIT";
-            break;
-        case DeviceState::RUNNING:
-            new_state_name = "RUNNING";
-            break;
-        case DeviceState::ERROR:
-            new_state_name = "ERROR";
-            break;
-        case DeviceState::RECOVERY:
-            new_state_name = "RECOVERY";
-            break;
-        }
-
-        ESP_LOGI(TAG, "状态转换: %s -> %s", old_state_name, new_state_name);
+        ESP_LOGI(TAG, "状态转换: %s -> %s", getStateName(current_state_), getStateName(new_state));
 
         // 更新状态
         current_state_    = new_state;
@@ -211,7 +184,7 @@ namespace app
             return;
         }
 
-        if (!initOpus())
+        if (!initOpusEnc())
         {
             ESP_LOGW(TAG, "Opus 编码器初始化失败，音频上传功能将不可用");
         }
@@ -282,13 +255,11 @@ namespace app
             ESP_LOGW(TAG, "NTP初始化失败，将在后台继续尝试");
         }
 
-        // ESP_LOGI(TAG, "初始化完成，进入配网状态");
         setState(DeviceState::PROVISIONING);
     }
 
     void App::handleProvisioningState()
     {
-
         // 检查配网是否已完成
         if (provision_completed_)
         {
@@ -359,7 +330,6 @@ namespace app
 
     void App::handleNtpSyncState()
     {
-
         // 检查NTP同步是否已完成
         if (ntp_sync_completed_)
         {
@@ -382,17 +352,15 @@ namespace app
         // 初始化Chatbot（如果还未初始化）
         if (!chatbot_initialized_)
         {
-            // 从配置中读取服务器地址和端口
-            // 生产服务器配置
-            // const std::string server_host = "robot001.lmkids.com";
-            // const std::string path        = "/ws/device/{MAC}";
-            // const std::string protocol    = "wss"; // 使用 WSS
+            // 服务器配置
+            const std::string server_host = "robot001.lmkids.com";
+            const std::string path        = "/ws/device/{MAC}";
+            const std::string protocol    = "wss"; // 使用 WSS
 
-            const std::string server_host = "192.168.50.68";
-            const int         server_port  = 8080;
-            const std::string protocol    = "ws";
+            // const std::string server_host = "192.168.50.68";
+            // const int         server_port  = 8080;
 
-            if (!initChatbot(server_host, server_port, 5, 5, 10000))
+            if (!initChatbot(server_host, -1, 5, 5, 10000, path, protocol))
             {
                 ESP_LOGE(TAG, "Chatbot 初始化失败");
                 retry_count_++;
@@ -928,7 +896,7 @@ namespace app
         // 构建WebSocket URI
         std::ostringstream uri_stream;
         uri_stream << protocol << "://" << server_host;
-        
+
         // 如果指定了端口，添加到URI（wss默认443，ws默认80，通常不需要显式指定）
         if (server_port > 0)
         {
@@ -1043,7 +1011,7 @@ namespace app
         return true;
     }
 
-    bool App::initOpus()
+    bool App::initOpusEnc()
     {
         media::audio::process::opus::encode::EncoderConfig opus_cfg;
         opus_cfg.sample_rate      = 16000;
@@ -1053,7 +1021,8 @@ namespace app
         opus_cfg.frame_duration   = ESP_OPUS_ENC_FRAME_DURATION_20_MS;
         opus_cfg.application_mode = ESP_OPUS_ENC_APPLICATION_VOIP;
 
-        opus_encoder_ = std::make_unique<media::audio::process::opus::encode::OpusEncoder>(opus_cfg);
+        opus_encoder_ =
+            std::make_unique<media::audio::process::opus::encode::OpusEncoder>(opus_cfg);
 
         if (!opus_encoder_ || !opus_encoder_->isValid())
         {
@@ -1167,7 +1136,8 @@ namespace app
             {
                 // 只有在检测到语音、已连接且处于 RUNNING 状态时才上传音频
                 // 注意：这里可以根据需要放宽状态限制，比如在 WAKEWORD_WAIT 也可以上传用于云端校验
-                if (isSpeaking() && chatbot_.isConnected() && current_state_ == DeviceState::RUNNING)
+                if (isSpeaking() && chatbot_.isConnected() &&
+                    current_state_ == DeviceState::RUNNING)
                 {
                     // 1. 如果是本次语音的首帧，先发送 listen 消息
                     if (!listen_message_sent_)
